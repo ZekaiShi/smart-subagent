@@ -125,7 +125,10 @@ shortening the rediscovery loop.
   When a conversation has no session cwd or its workspace has no `agents/`
   folder, the plugin falls back to `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR`
   / the process working directory. The evolution files never appear in the
-  project's `agents/` folder.
+  project's `agents/` folder. The `<project>/.dsh/` directory is created
+  lazily: it only lands on disk when a subagent actually runs and reports
+  evolution content (or when you save manually from the settings card) -
+  workspace scanning and project detection are strictly read-only.
 - On each foreground run the plugin injects the two files as a bounded context
   block (capped at ~2000 tokens) into the child prompt, so the subagent starts
   from proven commands instead of re-deriving them.
@@ -152,11 +155,16 @@ to list all available agent keys programmatically.
 
 Under the web profile, Settings → Plugins shows a **smart-subagent** card that:
 
-- **Groups subagents by project.** It scans `SMART_SUBAGENT_PROJECTS_DIR`
-  (fallback: the profile's working directory) for directories that own an
-  `agents/` folder and lists each project separately. Point
-  `SMART_SUBAGENT_PROJECTS_DIR` at the workspace root that contains your
-  projects to see them all (e.g. `D:\trae`).
+- **Groups subagents by project.** The scan source is the profile's
+  registered **workspaces** (`ctx.workspaceRegistry` - the same workspaces the
+  web UI groups sessions by): each workspace is checked at its first level
+  (the workspace itself and its direct subdirectories) for an `agents/`
+  folder. Zero configuration and portable across machines - move to another
+  computer with different workspaces and the card follows automatically; if
+  nothing is found it says so explicitly. Built-in templates always have
+  their own group. Only when a profile has no registered workspaces does it
+  fall back to `SMART_SUBAGENT_PROJECTS_DIR` or a fallback dir set in the
+  card.
 - **Shows each agent's routing model** (provider · model from its front matter)
   and lets you **switch it with a dropdown** for project bindings — the change
   rewrites the `model:` line of the agent's `.md` file, the same file a

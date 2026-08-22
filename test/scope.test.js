@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { findProjectRoot, resolveSessionScope, detectProjects } from '../scope.js'
+import { findProjectRoot, resolveSessionScope, detectProjects, detectProjectsIn } from '../scope.js'
 import { setBindingModel } from '../binding.js'
 
 async function tmpTree() {
@@ -88,6 +88,39 @@ test('detectProjects stops descending once a project root is found', async () =>
   const projects = await detectProjects(base)
   const names = projects.map((p) => p.projectName)
   assert.deepEqual(names, ['proj-c'])
+})
+
+test('detectProjectsIn scans workspace bases at first level and dedupes', async () => {
+  const base = await tmpTree()
+  // A workspace that IS the project (agents/ directly under it).
+  await mkdir(join(base, 'ws-project', 'agents'), { recursive: true })
+  // A workspace whose first-level subdir owns agents/.
+  await mkdir(join(base, 'ws-parent', 'proj-x', 'agents'), { recursive: true })
+  // Second level must not be reached from a workspace base.
+  await mkdir(join(base, 'ws-parent', 'other', 'deep', 'agents'), { recursive: true })
+  const projects = await detectProjectsIn([
+    join(base, 'ws-project'),
+    join(base, 'ws-parent'),
+    // invalid entries are skipped, not fatal
+    '',
+    undefined,
+    join(base, 'does-not-exist'),
+  ])
+  const names = projects.map((p) => p.projectName).sort()
+  assert.deepEqual(names, ['proj-x', 'ws-project'])
+})
+
+test('detectProjectsIn dedupes the same project reached via two workspaces', async () => {
+  const base = await tmpTree()
+  await mkdir(join(base, 'proj-dup', 'agents'), { recursive: true })
+  const projects = await detectProjectsIn([join(base, 'proj-dup'), base])
+  assert.equal(projects.length, 1)
+  assert.equal(projects[0].projectRoot, join(base, 'proj-dup'))
+})
+
+test('detectProjectsIn with no bases resolves to no projects', async () => {
+  assert.deepEqual(await detectProjectsIn([]), [])
+  assert.deepEqual(await detectProjectsIn(undefined), [])
 })
 
 test('setBindingModel rewrites only the model line and preserves the body', async () => {

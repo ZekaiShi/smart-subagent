@@ -74,7 +74,7 @@ model: deepseek-v4-flash
   `<项目>/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` 和
   `memory.md`——不同项目各自独立绑定与进化、互不污染，与 DSH 进程从哪启动无关。
   当对话没有会话 cwd、或其工作区没有 `agents/` 文件夹时，回退到 `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR` / 进程工作目录。
-  文件**不会出现在你项目的 `agents/` 文件夹里**。
+  文件**不会出现在你项目的 `agents/` 文件夹里**。`<项目>/.dsh/` 目录也是**懒创建**的：只有某个 subagent 真正运行并回报了进化内容（或你在设置卡片里手动保存）时才会落盘，工作区扫描/项目检测是纯只读的，绝不会在你硬盘上多出目录。
 - 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限约 2000 token），让 subagent 直接从已验证的命令出发，不用重新摸索。
 - 前台运行结束后，插件会在最终输出中查找 `[[EVOLUTION]]` 块并合并新记录：
 
@@ -96,8 +96,8 @@ model: deepseek-v4-flash
 
 web profile 下，设置 → 插件会出现一张 **smart-subagent** 卡片：
 
-- **按项目分组展示 subagents**。扫描 `SMART_SUBAGENT_PROJECTS_DIR`（缺省为 profile 工作目录）下所有拥有 `agents/` 文件夹的目录，逐项目列出。
-  把 `SMART_SUBAGENT_PROJECTS_DIR` 指向包含你项目的工作区根目录即可全部显示（例如 `D:\trae`）。
+- **按项目分组展示 subagents**。扫描来源是该 profile 注册的所有**工作区**（`ctx.workspaceRegistry`，即你在 web 界面里看到的那些工作区）：每个工作区检查自身与其**一级子目录**是否含 `agents/` 文件夹，找到即为项目。零配置、跨机器通用--换台电脑、换批工作区，卡片自动跟上；没有则明确显示"未发现"。内置模板始终单独成组展示。
+  仅当 profile 没有注册任何工作区时，才退回 `SMART_SUBAGENT_PROJECTS_DIR` / 卡片里填写的备用目录。
 - **显示每个 agent 当前路由模型**（front matter 的 provider · model），项目绑定可用**下拉切换模型**——改动直接改写该 agent `.md` 文件的 `model:` 行（与手改同一文件）。
   内置模板 agent 只读显示。
 - 编辑每个 agent 的隐藏 `prefercmd.md` / `memory.md`（按项目的进化文件），并切换全局进化开关。

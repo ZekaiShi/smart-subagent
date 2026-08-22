@@ -18,12 +18,16 @@ window.__ModuleLoader__.load({
 
     var EN = {
       title: 'smart-subagent',
-      subtitle: 'Evolution mode · subagents grouped by project · model dropdown',
+      subtitle: 'Evolution mode · subagents grouped by workspace · model dropdown',
       scope: 'Scope',
       scopeBindings: 'Bindings',
       scopeEvolution: 'Evolution',
-      scopeProjects: 'Projects scan',
-      scanSave: 'Save scan dir',
+      scopeProjects: 'Scan source',
+      scanAuto: 'workspaces (auto)',
+      scanManual: 'custom dir',
+      scanNone: 'not configured',
+      scanFallback: 'Fallback scan dir - used only when no workspaces are registered; empty clears it',
+      scanSave: 'Save',
       builtin: 'Built-in templates',
       builtinHint: 'official roles, always available',
       projects: 'Subagents by project',
@@ -46,17 +50,21 @@ window.__ModuleLoader__.load({
       configFailed: 'Config update failed',
       loading: 'Loading…',
       empty: 'No projects with an agents/ folder found',
-      scanHint: 'Type a workspace root (e.g. D:\\trae) that contains your projects, or set SMART_SUBAGENT_PROJECTS_DIR.',
+      scanHint: 'No workspaces are registered in this profile yet. Open a conversation in a project folder, or set a fallback dir above.',
       open: 'Open',
     }
     var ZH = {
       title: 'smart-subagent',
-      subtitle: '进化模式 · 按项目分组的 subagents · 模型下拉',
+      subtitle: '进化模式 · 按工作区分组的 subagents · 模型下拉',
       scope: '作用域',
       scopeBindings: '绑定目录',
       scopeEvolution: '进化目录',
-      scopeProjects: '项目扫描目录',
-      scanSave: '保存扫描目录',
+      scopeProjects: '扫描来源',
+      scanAuto: '工作区自动扫描',
+      scanManual: '自定义目录',
+      scanNone: '未配置',
+      scanFallback: '备用扫描目录 - 仅在未注册工作区时使用，留空可清除',
+      scanSave: '保存',
       builtin: '内置模板',
       builtinHint: '官方角色，始终可用',
       projects: '按项目分组的 subagents',
@@ -78,8 +86,8 @@ window.__ModuleLoader__.load({
       modelFailed: '模型更新失败',
       configFailed: '配置更新失败',
       loading: '加载中…',
-      empty: '未找到含 agents/ 文件夹的项目',
-      scanHint: '把 SMART_SUBAGENT_PROJECTS_DIR 指向包含你项目的工作区根目录，即可在这里检测到项目。',
+      empty: '未发现含 agents/ 文件夹的项目',
+      scanHint: '此 profile 尚未注册任何工作区。在项目文件夹里打开一个对话，或在上方填写备用目录。',
       open: '展开',
     }
 
@@ -202,8 +210,9 @@ window.__ModuleLoader__.load({
         }, [open, summary, load])
 
         var saveScanDir = () => {
+          // Empty string clears the fallback dir on the host, returning the
+          // card to pure workspace auto-detection.
           var value = scanDir.trim()
-          if (value.length === 0) return
           noteState[1](t.saving)
           fetch('/smart-subagent/config', {
             method: 'POST',
@@ -325,6 +334,22 @@ window.__ModuleLoader__.load({
             var projects = Array.isArray(summary.projects) ? summary.projects : []
             var builtin = Array.isArray(summary.builtin) ? summary.builtin : []
             var modelsByProvider = summary.modelsByProvider || {}
+            var scopeInfo = (summary && summary.scope) || {}
+            var scanSource = scopeInfo.scanSource || (scopeInfo.projectsBaseDir ? 'manual' : 'none')
+            var workspaces = Array.isArray(scopeInfo.workspaces) ? scopeInfo.workspaces : []
+            var sourceText
+            if (scanSource === 'workspaces') {
+              sourceText =
+                t.scanAuto +
+                ' · ' +
+                workspaces.length +
+                '：' +
+                workspaces.map((w) => w.title || w.path).join('、')
+            } else if (scanSource === 'manual') {
+              sourceText = t.scanManual + '：' + (scopeInfo.projectsBaseDir || '')
+            } else {
+              sourceText = t.scanNone
+            }
             var projectSections = projects.map((project) => {
               var projectRoot = project.projectRoot
               var agentRows = (project.agents || []).map((agent) => {
@@ -564,54 +589,89 @@ window.__ModuleLoader__.load({
                 {
                   style: {
                     display: 'flex',
-                    alignItems: 'center',
+                    alignItems: 'baseline',
                     gap: '8px',
                     padding: '10px 0',
                     borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
                     fontSize: '13px',
+                    flexWrap: 'wrap',
                   },
                 },
                 h('span', { style: { fontWeight: 600, flex: 'none' } }, t.scopeProjects),
-                h('input', {
-                  type: 'text',
-                  value: scanDir,
-                  placeholder: 'D:\\trae',
-                  spellCheck: false,
-                  onChange: (event) => setScanDir(event.target.value),
-                  style: {
-                    flex: 1,
-                    minWidth: 0,
-                    font: 'inherit',
-                    fontSize: '12px',
-                    padding: '5px 8px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
-                    background: 'transparent',
-                    color: 'inherit',
-                  },
-                }),
                 h(
-                  'button',
+                  'span',
                   {
-                    type: 'button',
-                    onClick: saveScanDir,
                     style: {
-                      appearance: 'none',
-                      font: 'inherit',
+                      color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
                       fontSize: '12px',
-                      lineHeight: 1.5,
-                      cursor: 'pointer',
-                      border: '1px solid transparent',
-                      borderRadius: '8px',
-                      padding: '5px 12px',
-                      background: 'var(--dsw-alias-label-primary, currentColor)',
-                      color: 'var(--dsw-alias-bg-layer-3, rgba(127,127,127,0.05))',
-                      flex: 'none',
+                      wordBreak: 'break-all',
                     },
                   },
-                  t.scanSave,
+                  sourceText,
                 ),
               ),
+              scanSource === 'workspaces'
+                ? null
+                : h(
+                    'label',
+                    {
+                      style: {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        padding: '10px 0',
+                        borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
+                      },
+                    },
+                    h(
+                      'span',
+                      { style: { fontSize: '12px', color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))' } },
+                      t.scanFallback,
+                    ),
+                    h(
+                      'div',
+                      { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                      h('input', {
+                        type: 'text',
+                        value: scanDir,
+                        placeholder: 'D:\\trae',
+                        spellCheck: false,
+                        onChange: (event) => setScanDir(event.target.value),
+                        style: {
+                          flex: 1,
+                          minWidth: 0,
+                          font: 'inherit',
+                          fontSize: '12px',
+                          padding: '5px 8px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
+                          background: 'transparent',
+                          color: 'inherit',
+                        },
+                      }),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          onClick: saveScanDir,
+                          style: {
+                            appearance: 'none',
+                            font: 'inherit',
+                            fontSize: '12px',
+                            lineHeight: 1.5,
+                            cursor: 'pointer',
+                            border: '1px solid transparent',
+                            borderRadius: '8px',
+                            padding: '5px 12px',
+                            background: 'var(--dsw-alias-label-primary, currentColor)',
+                            color: 'var(--dsw-alias-bg-layer-3, rgba(127,127,127,0.05))',
+                            flex: 'none',
+                          },
+                        },
+                        t.scanSave,
+                      ),
+                    ),
+                  ),
               h(
                 'label',
                 {
@@ -698,7 +758,7 @@ window.__ModuleLoader__.load({
                       'div',
                       { style: { fontSize: '13px', color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))', display: 'flex', flexDirection: 'column', gap: '4px' } },
                       h('span', null, t.empty),
-                      h('span', { style: { fontSize: '12px' } }, t.scanHint),
+                      scanSource === 'workspaces' ? null : h('span', { style: { fontSize: '12px' } }, t.scanHint),
                     )
                   : h('div', null, projectSections),
                 'projects',

@@ -193,9 +193,6 @@ test('settings route /smart-subagent/agents returns project scope', async () => 
   assert.ok(captured.scope, 'scope present in response')
   assert.equal(captured.scope.bindingsDir, bindingsDir)
   assert.equal(captured.scope.evolutionDir, evolutionDir)
-  assert.equal(typeof captured.scope.projectName, 'string')
-  assert.ok(captured.scope.projectName.length > 0)
-  assert.equal(captured.scope.cwd, process.cwd())
 })
 
 test('settings route /smart-subagent/projects groups agents by project with model info', async () => {
@@ -257,6 +254,91 @@ test('settings route /smart-subagent/projects groups agents by project with mode
   assert.equal(builtinReviewer.editable, false)
   assert.equal(typeof builtinReviewer.model, 'string')
   assert.equal(captured.scope.projectsBaseDir, base)
+  // No workspace registry in this harness: the configured dir is the fallback.
+  assert.equal(captured.scope.scanSource, 'manual')
+})
+
+test('settings route /smart-subagent/projects scans registered workspaces', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'smart-sub-ws-'))
+  // ws-1 IS the project itself (agents/ directly under the workspace root).
+  await mkdir(join(base, 'ws-project', 'agents'), { recursive: true })
+  // ws-2 is a plain folder whose first-level subdir owns agents/.
+  await mkdir(join(base, 'ws-parent', 'nested-project', 'agents'), { recursive: true })
+  // A second-level subdir must NOT be found from a workspace.
+  await mkdir(join(base, 'ws-parent', 'skip', 'deep', 'agents'), { recursive: true })
+  await writeFile(
+    join(base, 'ws-project', 'agents', 'writer.md'),
+    '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
+    'utf8',
+  )
+  const routes = new Map()
+  const webServer = { register(route) { routes.set(route.path, route) } }
+  const settings = { register() {} }
+  const registry = {
+    list: () => [
+      { path: join(base, 'ws-project'), title: 'ws-project' },
+      { path: join(base, 'ws-parent'), title: 'ws-parent' },
+      { path: join(base, 'missing-dir'), title: 'missing-dir' },
+    ],
+  }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => {
+      if (services.includes('workspaceRegistry')) cb({ workspaceRegistry: registry })
+      else cb({ webServer, settings })
+    },
+    llm: { listProviders: () => [], listModels: async () => [] },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: join(base, 'ws-project', 'agents'), templatesDir, evolution: true, maxDepth: 3,
+  })
+  const route = routes.get('/smart-subagent/projects')
+  assert.ok(route, 'projects route registered')
+  let captured
+  const res = {
+    writeHead(status) { this.status = status },
+    end(body) { captured = JSON.parse(body) },
+  }
+  await route.handler({}, res)
+  assert.equal(res.status, 200)
+  assert.equal(captured.scope.scanSource, 'workspaces')
+  assert.deepEqual(
+    captured.scope.workspaces.map((w) => w.path),
+    [join(base, 'ws-project'), join(base, 'ws-parent'), join(base, 'missing-dir')],
+  )
+  const names = captured.projects.map((p) => p.projectName).sort()
+  // ws-project found directly, nested-project via ws-parent's first level;
+  // the second-level "deep" dir and the missing workspace are not found.
+  assert.deepEqual(names, ['nested-project', 'ws-project'])
+  // The workspaces override the configured projectsBaseDir when present.
+  assert.equal(captured.projects.length, 2)
+})
+
+test('settings route /smart-subagent/projects reports none when nothing is configured', async () => {
+  const routes = new Map()
+  const webServer = { register(route) { routes.set(route.path, route) } }
+  const settings = { register() {} }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => cb({ webServer, settings }),
+    llm: { listProviders: () => [], listModels: async () => [] },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: join(tmpdir(), 'smart-sub-none-'), templatesDir, evolution: true, maxDepth: 3,
+  })
+  const route = routes.get('/smart-subagent/projects')
+  let captured
+  const res = {
+    writeHead(status) { this.status = status },
+    end(body) { captured = JSON.parse(body) },
+  }
+  await route.handler({}, res)
+  assert.equal(res.status, 200)
+  assert.equal(captured.scope.scanSource, 'none')
+  assert.deepEqual(captured.projects, [])
+  assert.equal(captured.scope.projectsBaseDir, undefined)
+  // Built-in templates remain visible even with no scan source.
+  assert.equal(captured.builtin.length, 3)
 })
 
 test('settings route /smart-subagent/config updates the project scan dir and /projects rescans', async () => {

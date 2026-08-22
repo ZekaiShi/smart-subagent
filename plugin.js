@@ -12,7 +12,7 @@ import {
   readEvolutionFilesRaw,
   writeEvolutionFiles,
 } from './evolution.js'
-import { resolveSessionScope, detectProjects, findProjectRoot } from './scope.js'
+import { resolveSessionScope, detectProjectsIn, findProjectRoot } from './scope.js'
 
 function loadRuntimeConfig(evolutionDir) {
   try {
@@ -88,8 +88,37 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
     path: '/smart-subagent/projects',
     handler: async (req, res) => {
       try {
-        const baseDir = projectsBaseDir()
-        const found = await detectProjects(baseDir)
+        // Universal scan source: the profile's registered workspaces
+        // (ctx.workspaceRegistry - the same list the web GUI groups sessions
+        // by). Works on any machine with zero configuration. Each workspace
+        // is scanned at depth 1: the workspace directory itself plus its
+        // first-level subdirectories, looking for an `agents/` folder. The
+        // configured scan dir is only a fallback for profiles with no
+        // registered workspaces.
+        let baseDirs = []
+        let scanSource = 'none'
+        let workspaces = []
+        const registry = runtime.workspaceRegistry
+        if (registry !== undefined && typeof registry.list === 'function') {
+          try {
+            workspaces = registry.list()
+              .map((workspace) => ({ path: workspace?.path, title: workspace?.title }))
+              .filter((workspace) => typeof workspace.path === 'string' && workspace.path.length > 0)
+          } catch {
+            workspaces = []
+          }
+        }
+        if (workspaces.length > 0) {
+          baseDirs = workspaces.map((workspace) => workspace.path)
+          scanSource = 'workspaces'
+        } else {
+          const manual = projectsBaseDir()
+          if (typeof manual === 'string' && manual.length > 0) {
+            baseDirs = [manual]
+            scanSource = 'manual'
+          }
+        }
+        const found = await detectProjectsIn(baseDirs)
         const projects = []
         const modelsByProvider = new Map()
         for (const project of found) {
@@ -148,7 +177,12 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
           projects,
           builtin,
           evolution: state.evolution,
-          scope: { ...scope, projectsBaseDir: baseDir },
+          scope: {
+            ...scope,
+            projectsBaseDir: projectsBaseDir(),
+            scanSource,
+            workspaces,
+          },
           modelsByProvider: Object.fromEntries(modelsByProvider),
         })
       } catch (cause) {
@@ -239,14 +273,20 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
         if (typeof body.evolution === 'boolean') {
           state.evolution = body.evolution
         }
-        if (typeof body.projectsBaseDir === 'string' && body.projectsBaseDir.trim().length > 0) {
-          runtime.projectsBaseDir = resolve(body.projectsBaseDir.trim())
+        if (typeof body.projectsBaseDir === 'string') {
+          // An empty string clears the fallback so scanning goes back to
+          // pure workspace auto-detection.
+          const trimmed = body.projectsBaseDir.trim()
+          runtime.projectsBaseDir = trimmed.length > 0 ? resolve(trimmed) : undefined
         }
         saveRuntimeConfig(evolutionDir, {
           evolution: state.evolution,
-          projectsBaseDir: runtime.projectsBaseDir,
+          ...(runtime.projectsBaseDir === undefined ? {} : { projectsBaseDir: runtime.projectsBaseDir }),
         })
-        sendJson(res, 200, { evolution: state.evolution, projectsBaseDir: runtime.projectsBaseDir })
+        sendJson(res, 200, {
+          evolution: state.evolution,
+          projectsBaseDir: runtime.projectsBaseDir ?? '',
+        })
       } catch (cause) {
         sendJson(res, 500, error(cause))
       }
@@ -333,12 +373,10 @@ export function createApply(defineTool) {
       : (process.env.SMART_SUBAGENT_EVOLUTION_DIR
         ? resolve(process.env.SMART_SUBAGENT_EVOLUTION_DIR)
         : defaultEvolutionDir())
-    // Directory scanned by the settings card to group subagents by project.
-    // The card (browser) has no conversation context, so this defaults to the
-    // profile's working directory and can be pointed at the workspace root that
-    // contains the projects (e.g. SMART_SUBAGENT_PROJECTS_DIR=D:\trae, or set
-    // in the card UI). Persisted in <evolutionDir>/config.json; the card can
-    // change it at runtime.
+    // Fallback directory scanned by the settings card when the profile has no
+    // registered workspaces. Empty/undefined means pure workspace
+    // auto-detection. Precedence: explicit config > env
+    // SMART_SUBAGENT_PROJECTS_DIR > persisted <evolutionDir>/config.json.
     const persistedConfig = loadRuntimeConfig(evolutionDir)
     const projectsBaseDir = config.projectsBaseDir
       ? resolve(config.projectsBaseDir)
@@ -346,15 +384,12 @@ export function createApply(defineTool) {
         ? resolve(process.env.SMART_SUBAGENT_PROJECTS_DIR)
         : (typeof persistedConfig.projectsBaseDir === 'string' && persistedConfig.projectsBaseDir.length > 0
           ? resolve(persistedConfig.projectsBaseDir)
-          : process.cwd()))
-    const runtime = { projectsBaseDir }
-    // The scope shown in the settings card: which project/conversation this
-    // instance manages, so per-project subagent + evolution management is
-    // unambiguous when the same profile serves multiple projects.
-    const cwd = process.cwd()
+          : undefined))
+    const runtime = { projectsBaseDir, workspaceRegistry: undefined }
+    // The scope shown in the settings card. Runtime routing itself is
+    // per-conversation (resolveSessionScope in execute) - this only describes
+    // where the card scans for projects.
     const scope = Object.freeze({
-      cwd,
-      projectName: cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd,
       bindingsDir,
       evolutionDir,
       projectsBaseDir: runtime.projectsBaseDir,
@@ -371,6 +406,21 @@ export function createApply(defineTool) {
     // profile, and settings only when the settings page can dispatch cards.
     // Absent either, the plugin stays a pure host tool (headless profiles).
     if (typeof ctx.inject === 'function') {
+      // The web profile's registered workspaces: the universal, per-machine
+      // scan source for the settings card. Read lazily at request time, so a
+      // registry that appears later (or never, on headless profiles) is
+      // handled without ordering assumptions.
+      try {
+        ctx.inject(['workspaceRegistry'], (service) => {
+          try {
+            runtime.workspaceRegistry = service?.workspaceRegistry
+          } catch (error) {
+            console.error(`[smart-subagent] workspace registry read failed: ${error}`)
+          }
+        })
+      } catch (error) {
+        console.error(`[smart-subagent] workspace registry hook skipped: ${error}`)
+      }
       ctx.inject(['webServer'], (browser) => {
         try {
           registerEvolutionWeb(browser.webServer, {

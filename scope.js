@@ -126,3 +126,30 @@ export async function detectProjects(baseDir, { depth = 2, max = 50 } = {}) {
   await visit(root, depth)
   return projects
 }
+
+/**
+ * Scan several base directories - e.g. every workspace registered in the web
+ * profile (`ctx.workspaceRegistry.list()`) - for projects, deduplicating by
+ * resolved project root. Each base is scanned at `depth` (default 1: the base
+ * directory itself plus its first-level subdirectories), implementing "scan
+ * the workspace's first level for an `agents/` folder". Invalid or empty
+ * entries are skipped, so a missing workspace directory degrades to "no
+ * projects found", never an error. Read-only: never creates anything on disk.
+ *
+ * @param {Iterable<string>} baseDirs
+ * @param {{ depth?: number, max?: number }} [options]
+ * @returns {Promise<Array<{projectRoot: string, projectName: string, agentsDir: string}>>}
+ */
+export async function detectProjectsIn(baseDirs, { depth = 1, max = 50 } = {}) {
+  const projects = []
+  const seen = new Set()
+  for (const baseDir of baseDirs ?? []) {
+    if (typeof baseDir !== 'string' || baseDir.trim().length === 0) continue
+    for (const project of await detectProjects(baseDir, { depth, max })) {
+      if (seen.has(project.projectRoot)) continue
+      seen.add(project.projectRoot)
+      projects.push(project)
+    }
+  }
+  return projects
+}

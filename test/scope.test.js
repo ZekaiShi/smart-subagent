@@ -90,14 +90,12 @@ test('detectProjects stops descending once a project root is found', async () =>
   assert.deepEqual(names, ['proj-c'])
 })
 
-test('detectProjectsIn scans workspace bases at first level and dedupes', async () => {
+test('detectProjectsIn checks only each base\'s own agents/ folder (no recursion)', async () => {
   const base = await tmpTree()
   // A workspace that IS the project (agents/ directly under it).
   await mkdir(join(base, 'ws-project', 'agents'), { recursive: true })
-  // A workspace whose first-level subdir owns agents/.
+  // A workspace whose first-level subdir owns agents/ - NOT found at depth 0.
   await mkdir(join(base, 'ws-parent', 'proj-x', 'agents'), { recursive: true })
-  // Second level must not be reached from a workspace base.
-  await mkdir(join(base, 'ws-parent', 'other', 'deep', 'agents'), { recursive: true })
   const projects = await detectProjectsIn([
     join(base, 'ws-project'),
     join(base, 'ws-parent'),
@@ -107,15 +105,22 @@ test('detectProjectsIn scans workspace bases at first level and dedupes', async 
     join(base, 'does-not-exist'),
   ])
   const names = projects.map((p) => p.projectName).sort()
-  assert.deepEqual(names, ['proj-x', 'ws-project'])
+  assert.deepEqual(names, ['ws-project'])
 })
 
-test('detectProjectsIn dedupes the same project reached via two workspaces', async () => {
+test('detectProjectsIn dedupes the same project reached via two bases', async () => {
   const base = await tmpTree()
   await mkdir(join(base, 'proj-dup', 'agents'), { recursive: true })
-  const projects = await detectProjectsIn([join(base, 'proj-dup'), base])
+  const projects = await detectProjectsIn([join(base, 'proj-dup'), join(base, 'proj-dup')])
   assert.equal(projects.length, 1)
   assert.equal(projects[0].projectRoot, join(base, 'proj-dup'))
+})
+
+test('detectProjectsIn recurses when a larger depth is passed explicitly', async () => {
+  const base = await tmpTree()
+  await mkdir(join(base, 'ws-parent', 'proj-x', 'agents'), { recursive: true })
+  const projects = await detectProjectsIn([join(base, 'ws-parent')], { depth: 1 })
+  assert.deepEqual(projects.map((p) => p.projectName), ['proj-x'])
 })
 
 test('detectProjectsIn with no bases resolves to no projects', async () => {
@@ -152,4 +157,24 @@ test('setBindingModel rejects a malformed front matter', async () => {
   const file = join(root, 'bad.md')
   await writeFile(file, 'no front matter', 'utf8')
   await assert.rejects(() => setBindingModel(file, 'x'), /line 1 must be exactly "---"/)
+})
+
+test('setBindingModel rewrites provider and model together when both given', async () => {
+  const root = await tmpTree()
+  const file = join(root, 'chapter-writer.md')
+  const original = `---
+provider: arkagentplan
+model: glm-5.3
+---
+
+# Chapter Writer
+
+你负责写正文。
+`
+  await writeFile(file, original, 'utf8')
+  const updated = await setBindingModel(file, 'deepseek-v4-flash', 'deepseek-official')
+  assert.deepEqual(updated, { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+  const after = await readFile(file, 'utf8')
+  assert.match(after, /^---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---$/m)
+  assert.match(after, /你负责写正文。/)
 })

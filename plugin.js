@@ -90,11 +90,10 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
       try {
         // Universal scan source: the profile's registered workspaces
         // (ctx.workspaceRegistry - the same list the web GUI groups sessions
-        // by). Works on any machine with zero configuration. Each workspace
-        // is scanned at depth 1: the workspace directory itself plus its
-        // first-level subdirectories, looking for an `agents/` folder. The
-        // configured scan dir is only a fallback for profiles with no
-        // registered workspaces.
+        // by). Works on any machine with zero configuration. Strictly the
+        // workspace's own `agents/` folder - no recursion into
+        // subdirectories. The configured scan dir is only a fallback for
+        // profiles with no registered workspaces.
         let baseDirs = []
         let scanSource = 'none'
         let workspaces = []
@@ -118,24 +117,35 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
             scanSource = 'manual'
           }
         }
-        const found = await detectProjectsIn(baseDirs)
+        const found = await detectProjectsIn(baseDirs, { depth: 0 })
         const projects = []
         const modelsByProvider = new Map()
+        // Dropdown data: every registered provider and its models, so any
+        // provider/model route can be selected, not just the agent's current
+        // provider.
+        if (llm !== undefined) {
+          try {
+            for (const entry of llm.listProviders()) {
+              try {
+                const listed = await llm.listModels(entry.id)
+                modelsByProvider.set(entry.id, listed.map((model) => model.id))
+              } catch {
+                modelsByProvider.set(entry.id, [])
+              }
+            }
+          } catch {
+            // provider listing unavailable - dropdowns fall back to the
+            // agents' current values only
+          }
+        }
         for (const project of found) {
-          const agents = await detectAgents(project.agentsDir, templatesDir)
-          // Enrich each agent with its routing provider/model and whether the
-          // model is editable (only project binding files are editable).
+          // Only the workspace's own binding agents: built-in templates are
+          // maintained as their own separate group, never mixed in here.
+          const agents = (await detectAgents(project.agentsDir, templatesDir))
+            .filter((agent) => agent.source !== 'template')
           const enriched = []
           for (const agent of agents) {
             const info = await routeInfo(project.agentsDir, agent.agentKey)
-            if (info.provider !== undefined && !modelsByProvider.has(info.provider) && llm !== undefined) {
-              try {
-                const listed = await llm.listModels(info.provider)
-                modelsByProvider.set(info.provider, listed.map((entry) => entry.id))
-              } catch {
-                modelsByProvider.set(info.provider, [])
-              }
-            }
             enriched.push({
               agentKey: agent.agentKey,
               source: agent.source,
@@ -157,14 +167,6 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
         const builtin = []
         for (const agent of templateAgents) {
           const info = await routeInfo(join(templatesDir, '__none__'), agent.agentKey)
-          if (info.provider !== undefined && !modelsByProvider.has(info.provider) && llm !== undefined) {
-            try {
-              const listed = await llm.listModels(info.provider)
-              modelsByProvider.set(info.provider, listed.map((entry) => entry.id))
-            } catch {
-              modelsByProvider.set(info.provider, [])
-            }
-          }
           builtin.push({
             agentKey: agent.agentKey,
             source: 'template',
@@ -205,9 +207,13 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
         const key = assertAgentKey(String(body.agentKey ?? ''))
         const model = String(body.model ?? '')
         if (model.length === 0) throw new Error('model is required')
+        const provider = body.provider === undefined || body.provider === null
+          ? undefined
+          : String(body.provider)
+        if (provider !== undefined && provider.length === 0) throw new Error('provider must be non-empty when given')
         const projectRoot = await findProjectRoot(String(body.projectRoot ?? process.cwd()))
         const filename = join(projectRoot, 'agents', `${key}.md`)
-        const updated = await setBindingModel(filename, model)
+        const updated = await setBindingModel(filename, model, provider)
         sendJson(res, 200, { ok: true, provider: updated.provider, model: updated.model })
       } catch (cause) {
         sendJson(res, 500, error(cause))

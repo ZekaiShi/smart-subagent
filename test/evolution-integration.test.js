@@ -211,15 +211,17 @@ test('settings route /smart-subagent/projects groups agents by project with mode
     tools: { register() {} },
     inject: (services, cb) => cb({ webServer, settings }),
     llm: {
-      listProviders: () => [{ id: 'deepseek-official' }],
-      listModels: async () => [
-        { provider: 'deepseek-official', id: 'deepseek-v4-flash' },
-        { provider: 'deepseek-official', id: 'deepseek-v3' },
-      ],
+      listProviders: () => [{ id: 'deepseek-official' }, { id: 'other-provider' }],
+      listModels: async (provider) => provider === 'other-provider'
+        ? [{ provider, id: 'other-model' }]
+        : [
+            { provider, id: 'deepseek-v4-flash' },
+            { provider, id: 'deepseek-v3' },
+          ],
     },
   }
   createApply(v => v)(ctx, {
-    bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: base, maxDepth: 3,
+    bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: join(base, 'proj-x'), maxDepth: 3,
   })
   const route = routes.get('/smart-subagent/projects')
   assert.ok(route, 'projects route registered')
@@ -233,19 +235,17 @@ test('settings route /smart-subagent/projects groups agents by project with mode
   assert.equal(captured.projects.length, 1)
   const project = captured.projects[0]
   assert.equal(project.projectName, 'proj-x')
-  // 3 built-in templates + the project binding
-  assert.equal(project.agents.length, 4)
+  // ONLY the workspace's own binding - built-in templates are never mixed in.
+  assert.equal(project.agents.length, 1)
   const writer = project.agents.find((a) => a.agentKey === 'writer')
   assert.ok(writer, 'binding agent present')
   assert.equal(writer.source, 'binding')
   assert.equal(writer.provider, 'deepseek-official')
   assert.equal(writer.model, 'deepseek-v4-flash')
   assert.equal(writer.editable, true)
-  const reviewer = project.agents.find((a) => a.agentKey === 'code-reviewer')
-  assert.ok(reviewer, 'template agent present')
-  assert.equal(reviewer.source, 'template')
-  assert.equal(reviewer.editable, false)
+  // Dropdown data covers EVERY registered provider, not just the current one.
   assert.deepEqual(captured.modelsByProvider['deepseek-official'], ['deepseek-v4-flash', 'deepseek-v3'])
+  assert.deepEqual(captured.modelsByProvider['other-provider'], ['other-model'])
   // built-in templates come back as their own always-visible group
   assert.ok(Array.isArray(captured.builtin), 'builtin present')
   assert.equal(captured.builtin.length, 3)
@@ -253,7 +253,7 @@ test('settings route /smart-subagent/projects groups agents by project with mode
   assert.ok(builtinReviewer)
   assert.equal(builtinReviewer.editable, false)
   assert.equal(typeof builtinReviewer.model, 'string')
-  assert.equal(captured.scope.projectsBaseDir, base)
+  assert.equal(captured.scope.projectsBaseDir, join(base, 'proj-x'))
   // No workspace registry in this harness: the configured dir is the fallback.
   assert.equal(captured.scope.scanSource, 'manual')
 })
@@ -262,10 +262,9 @@ test('settings route /smart-subagent/projects scans registered workspaces', asyn
   const base = await mkdtemp(join(tmpdir(), 'smart-sub-ws-'))
   // ws-1 IS the project itself (agents/ directly under the workspace root).
   await mkdir(join(base, 'ws-project', 'agents'), { recursive: true })
-  // ws-2 is a plain folder whose first-level subdir owns agents/.
+  // ws-2 is a plain folder whose first-level subdir owns agents/ - NOT found:
+  // a workspace only owns the agents/ folder right under itself.
   await mkdir(join(base, 'ws-parent', 'nested-project', 'agents'), { recursive: true })
-  // A second-level subdir must NOT be found from a workspace.
-  await mkdir(join(base, 'ws-parent', 'skip', 'deep', 'agents'), { recursive: true })
   await writeFile(
     join(base, 'ws-project', 'agents', 'writer.md'),
     '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
@@ -306,12 +305,10 @@ test('settings route /smart-subagent/projects scans registered workspaces', asyn
     captured.scope.workspaces.map((w) => w.path),
     [join(base, 'ws-project'), join(base, 'ws-parent'), join(base, 'missing-dir')],
   )
-  const names = captured.projects.map((p) => p.projectName).sort()
-  // ws-project found directly, nested-project via ws-parent's first level;
-  // the second-level "deep" dir and the missing workspace are not found.
-  assert.deepEqual(names, ['nested-project', 'ws-project'])
-  // The workspaces override the configured projectsBaseDir when present.
-  assert.equal(captured.projects.length, 2)
+  // Only ws-project qualifies: ws-parent has no agents/ of its own (its
+  // nested subdir does not count), and the missing workspace is skipped.
+  assert.deepEqual(captured.projects.map((p) => p.projectName), ['ws-project'])
+  assert.equal(captured.projects[0].agents.length, 1)
 })
 
 test('settings route /smart-subagent/projects reports none when nothing is configured', async () => {
@@ -355,7 +352,8 @@ test('settings route /smart-subagent/config updates the project scan dir and /pr
     llm: { listProviders: () => [], listModels: async () => [] },
   }
   createApply(v => v)(ctx, {
-    bindingsDir: baseA, templatesDir, evolution: true, projectsBaseDir: baseA, maxDepth: 3,
+    bindingsDir: join(baseA, 'proj-a', 'agents'), templatesDir, evolution: true,
+    projectsBaseDir: join(baseA, 'proj-a'), maxDepth: 3,
   })
   const post = (path, payload) => {
     const req = {
@@ -372,11 +370,11 @@ test('settings route /smart-subagent/config updates the project scan dir and /pr
   }
   const before = await post('/smart-subagent/projects', {})
   assert.deepEqual(before.projects.map((p) => p.projectName), ['proj-a'])
-  const cfg = await post('/smart-subagent/config', { projectsBaseDir: baseB })
-  assert.equal(cfg.projectsBaseDir, baseB)
+  const cfg = await post('/smart-subagent/config', { projectsBaseDir: join(baseB, 'proj-b') })
+  assert.equal(cfg.projectsBaseDir, join(baseB, 'proj-b'))
   const after = await post('/smart-subagent/projects', {})
   assert.deepEqual(after.projects.map((p) => p.projectName), ['proj-b'])
-  assert.equal(after.scope.projectsBaseDir, baseB)
+  assert.equal(after.scope.projectsBaseDir, join(baseB, 'proj-b'))
 })
 
 test('settings route /smart-subagent/model rewrites the binding front matter', async () => {
@@ -398,7 +396,7 @@ test('settings route /smart-subagent/model rewrites the binding front matter', a
     llm: { listProviders: () => [], listModels: async () => [] },
   }
   createApply(v => v)(ctx, {
-    bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: base, maxDepth: 3,
+    bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: join(base, 'proj-m'), maxDepth: 3,
   })
   const route = routes.get('/smart-subagent/model')
   assert.ok(route, 'model route registered')
@@ -410,7 +408,12 @@ test('settings route /smart-subagent/model rewrites the binding front matter', a
   const req = {
     method: 'POST',
     [Symbol.asyncIterator]() {
-      const body = JSON.stringify({ projectRoot: join(base, 'proj-m'), agentKey: 'writer', model: 'deepseek-v3' })
+      const body = JSON.stringify({
+        projectRoot: join(base, 'proj-m'),
+        agentKey: 'writer',
+        provider: 'other-provider',
+        model: 'deepseek-v3',
+      })
       let sent = false
       return {
         next: async () => (sent ? { done: true } : ((sent = true), { done: false, value: Buffer.from(body) })),
@@ -420,8 +423,10 @@ test('settings route /smart-subagent/model rewrites the binding front matter', a
   await route.handler(req, res)
   assert.equal(res.status, 200)
   assert.equal(captured.ok, true)
+  assert.equal(captured.provider, 'other-provider')
   assert.equal(captured.model, 'deepseek-v3')
   const after = await readFile(bindingFile, 'utf8')
+  assert.match(after, /^provider: other-provider$/m)
   assert.match(after, /^model: deepseek-v3$/m)
   assert.match(after, /role text/)
 })

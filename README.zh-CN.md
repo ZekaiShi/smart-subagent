@@ -96,9 +96,9 @@ model: deepseek-v4-flash
 
 web profile 下，设置 → 插件会出现一张 **smart-subagent** 卡片：
 
-- **按项目分组展示 subagents**。扫描来源是该 profile 注册的所有**工作区**（`ctx.workspaceRegistry`，即你在 web 界面里看到的那些工作区）：每个工作区检查自身与其**一级子目录**是否含 `agents/` 文件夹，找到即为项目。零配置、跨机器通用--换台电脑、换批工作区，卡片自动跟上；没有则明确显示"未发现"。内置模板始终单独成组展示。
+- **按项目分组展示 subagents**。扫描来源是该 profile 注册的所有**工作区**（`ctx.workspaceRegistry`，即你在 web 界面里看到的那些工作区）：每个工作区只认它**自己名下的 `agents/` 文件夹**（不递归子目录）。零配置、跨机器通用--换台电脑、换批工作区，卡片自动跟上；没有则明确显示"未发现"。内置模板单独成组、绝不混入项目组。
   仅当 profile 没有注册任何工作区时，才退回 `SMART_SUBAGENT_PROJECTS_DIR` / 卡片里填写的备用目录。
-- **显示每个 agent 当前路由模型**（front matter 的 provider · model），项目绑定可用**下拉切换模型**——改动直接改写该 agent `.md` 文件的 `model:` 行（与手改同一文件）。
+- **双下拉切换路由**：Provider 下拉列出所有已注册 provider，模型下拉列出该 provider 的全部已注册模型，任何组合都能选；改动直接改写该 agent `.md` 文件的 `provider:` 与 `model:` 两行，切 provider 时自动选中其第一个模型。
   内置模板 agent 只读显示。
 - 编辑每个 agent 的隐藏 `prefercmd.md` / `memory.md`（按项目的进化文件），并切换全局进化开关。
 

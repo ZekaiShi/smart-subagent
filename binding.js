@@ -47,18 +47,23 @@ export async function loadBinding(bindingsDir, agentKey) {
 }
 
 /**
- * Rewrite the `model:` line in a binding file's 4-line front matter and return
- * the new header. Preserves everything after the front matter untouched, so the
- * settings card can switch an agent's routing model by editing the same file a
- * developer would edit by hand.
+ * Rewrite the `provider:` and/or `model:` lines in a binding file's 4-line
+ * front matter and return the new header. Preserves everything after the
+ * front matter untouched, so the settings card can switch an agent's routing
+ * by editing the same file a developer would edit by hand.
  *
  * @param {string} filename - absolute path to the binding `.md` file
  * @param {string} model - new model id
+ * @param {string} [provider] - new provider id (optional; keeps the current
+ *   provider line when omitted)
  * @returns {Promise<{provider: string, model: string}>}
  */
-export async function setBindingModel(filename, model) {
+export async function setBindingModel(filename, model, provider) {
   if (typeof model !== 'string' || model.length === 0) {
     throw new TypeError('smart-subagent: model must be a non-empty string')
+  }
+  if (provider !== undefined && (typeof provider !== 'string' || provider.length === 0)) {
+    throw new TypeError('smart-subagent: provider must be a non-empty string when given')
   }
   const text = await readFile(filename, 'utf8')
   const body = text.replace(/^\uFEFF/, '')
@@ -66,9 +71,13 @@ export async function setBindingModel(filename, model) {
   if (lines[0] !== FRONT_MATTER_DELIMITER) {
     throw new Error(`${filename}: line 1 must be exactly "---"`)
   }
+  if (!PROVIDER_LINE.exec(lines[1] ?? '')) {
+    throw new Error(`${filename}: line 2 must be exactly "provider: <registered-provider-id>"`)
+  }
   if (!MODEL_LINE.exec(lines[2] ?? '')) {
     throw new Error(`${filename}: line 3 must be exactly "model: <registered-model-id>"`)
   }
+  if (provider !== undefined) lines[1] = `provider: ${provider}`
   lines[2] = `model: ${model}`
   const updated = lines.join('\n')
   await writeFile(filename, updated, 'utf8')

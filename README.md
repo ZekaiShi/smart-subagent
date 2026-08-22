@@ -157,18 +157,21 @@ Under the web profile, Settings → Plugins shows a **smart-subagent** card that
 
 - **Groups subagents by project.** The scan source is the profile's
   registered **workspaces** (`ctx.workspaceRegistry` - the same workspaces the
-  web UI groups sessions by): each workspace is checked at its first level
-  (the workspace itself and its direct subdirectories) for an `agents/`
-  folder. Zero configuration and portable across machines - move to another
-  computer with different workspaces and the card follows automatically; if
-  nothing is found it says so explicitly. Built-in templates always have
-  their own group. Only when a profile has no registered workspaces does it
+  web UI groups sessions by): each workspace owns only the `agents/` folder
+  right under it - no recursion into subdirectories. Zero configuration and
+  portable across machines - move to another computer with different
+  workspaces and the card follows automatically; if nothing is found it says
+  so explicitly. Built-in templates are maintained as their own separate
+  group and never mixed into a project. Only when a profile has no registered workspaces does it
   fall back to `SMART_SUBAGENT_PROJECTS_DIR` or a fallback dir set in the
   card.
 - **Shows each agent's routing model** (provider · model from its front matter)
-  and lets you **switch it with a dropdown** for project bindings — the change
-  rewrites the `model:` line of the agent's `.md` file, the same file a
-  developer would edit by hand. Built-in template agents are shown read-only.
+  and lets you **switch it with two dropdowns** for project bindings: a
+  Provider dropdown listing every registered provider and a model dropdown
+  listing that provider's registered models — any combination is selectable.
+  The change rewrites the `provider:` and `model:` lines of the agent's `.md`
+  file, the same file a developer would edit by hand; picking a provider
+  auto-selects its first model. Built-in template agents are shown read-only.
 - Edits each agent's hidden `prefercmd.md` / `memory.md` (per-project evolution
   files) and flips the global evolution toggle.
 

@@ -32,6 +32,7 @@ window.__ModuleLoader__.load({
       builtinHint: 'official roles, always available',
       projects: 'Subagents by project',
       projectsHint: 'each project owns its agents/ + evolution',
+      provider: 'Provider',
       model: 'Routing model',
       modelFixed: 'built-in template (read-only)',
       source: { binding: 'binding', template: 'built-in', both: 'binding + built-in' },
@@ -69,6 +70,7 @@ window.__ModuleLoader__.load({
       builtinHint: '官方角色，始终可用',
       projects: '按项目分组的 subagents',
       projectsHint: '每个项目独立拥有 agents/ 与进化文件',
+      provider: 'Provider',
       model: '路由模型',
       modelFixed: '内置模板（只读）',
       source: { binding: '绑定', template: '内置', both: '绑定 + 内置' },
@@ -186,6 +188,7 @@ window.__ModuleLoader__.load({
         var noteState = react.useState('')
         var editorsState = react.useState({})
         var scanDirState = react.useState('')
+        var routesState = react.useState({})
         var open = openState[0]
         var summary = summaryState[0]
         var note = noteState[0]
@@ -193,6 +196,8 @@ window.__ModuleLoader__.load({
         var setEditors = editorsState[1]
         var scanDir = scanDirState[0]
         var setScanDir = scanDirState[1]
+        var routes = routesState[0]
+        var setRoutes = routesState[1]
 
         var load = react.useCallback(() => {
           fetch('/smart-subagent/projects')
@@ -241,15 +246,33 @@ window.__ModuleLoader__.load({
             .catch(() => noteState[1](t.toggleFailed))
         }
 
-        var changeModel = (projectRoot, agentKey, model) => {
+        // POST a provider/model route change and keep a local draft of the
+        // selection so the two dropdowns stay consistent while saving.
+        var postModel = (projectRoot, agentKey, provider, model) => {
           fetch('/smart-subagent/model', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ projectRoot, agentKey, model }),
+            body: JSON.stringify({ projectRoot, agentKey, provider, model }),
           })
             .then((r) => r.json().then((body) => (r.ok ? body : Promise.reject(new Error(body.error || '')))))
             .then(() => load())
             .catch((error) => noteState[1](noteFrom(error, t.modelFailed)))
+        }
+
+        var changeModel = (projectRoot, agentKey, provider, model) => {
+          var id = projectRoot + '::' + agentKey
+          setRoutes((prev) => ({ ...prev, [id]: { provider, model } }))
+          postModel(projectRoot, agentKey, provider, model)
+        }
+
+        var changeProvider = (projectRoot, agentKey, provider, modelsByProvider) => {
+          var id = projectRoot + '::' + agentKey
+          // Auto-pick the first model of the newly selected provider so one
+          // provider click is a complete, routable selection.
+          var models = modelsByProvider[provider] || []
+          var model = models[0] || ''
+          setRoutes((prev) => ({ ...prev, [id]: { provider, model } }))
+          if (model.length > 0) postModel(projectRoot, agentKey, provider, model)
         }
 
         var readFiles = (projectRoot, agentKey) => {
@@ -357,19 +380,43 @@ window.__ModuleLoader__.load({
                 var id = projectRoot + '::' + key
                 var entry = editors[id] || {}
                 var expanded = Boolean(entry.open)
-                var options = modelsByProvider[agent.provider] || []
+                // Draft route selection: falls back to the agent's persisted
+                // provider/model until the user picks something.
+                var draft = routes[id] || {}
+                var currentProvider = draft.provider || agent.provider || ''
+                var currentModel = draft.model || agent.model || ''
+                var providerOptions = Object.keys(modelsByProvider)
+                var modelOptions = modelsByProvider[currentProvider] || []
                 var modelControl = agent.editable
                   ? h(
-                      'select',
+                      'div',
                       {
-                        value: agent.model || '',
-                        onChange: (event) => changeModel(projectRoot, key, event.target.value),
-                        style: selectStyles,
-                        'aria-label': t.model + ' · ' + key,
+                        style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
                       },
-                      options.length === 0
-                        ? h('option', { key: agent.model || '' }, agent.model || '')
-                        : options.map((model) => h('option', { key: model, value: model }, model)),
+                      h(
+                        'select',
+                        {
+                          value: currentProvider,
+                          onChange: (event) => changeProvider(projectRoot, key, event.target.value, modelsByProvider),
+                          style: selectStyles,
+                          'aria-label': t.provider + ' · ' + key,
+                        },
+                        providerOptions.length === 0
+                          ? h('option', { key: currentProvider }, currentProvider)
+                          : providerOptions.map((provider) => h('option', { key: provider, value: provider }, provider)),
+                      ),
+                      h(
+                        'select',
+                        {
+                          value: currentModel,
+                          onChange: (event) => changeModel(projectRoot, key, currentProvider, event.target.value),
+                          style: selectStyles,
+                          'aria-label': t.model + ' · ' + key,
+                        },
+                        modelOptions.length === 0
+                          ? h('option', { key: currentModel }, currentModel)
+                          : modelOptions.map((model) => h('option', { key: model, value: model }, model)),
+                      ),
                     )
                   : h(
                       'span',

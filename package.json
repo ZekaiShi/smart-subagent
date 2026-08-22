@@ -1,6 +1,6 @@
 {
   "name": "smart-subagent",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Route fresh DeepSeek Harness subagents to registered provider/model pairs declared in role Markdown files",
   "type": "module",
   "main": "index.js",
@@ -13,6 +13,7 @@
     "index.js",
     "plugin.js",
     "binding.js",
+    "evolution.js",
     "cordis.patch.yml",
     "templates",
     "README.md",
@@ -21,7 +22,7 @@
   ],
   "scripts": {
     "test": "node --test --test-isolation=none",
-    "check": "node --check index.js && node --check plugin.js && node --check binding.js",
+    "check": "node --check index.js && node --check plugin.js && node --check binding.js && node --check evolution.js",
     "prepack": "npm run check && npm test"
   },
   "keywords": [

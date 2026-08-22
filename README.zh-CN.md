@@ -65,6 +65,31 @@ model: deepseek-v4-flash
 
 只有 front matter 属于路由元数据。后续 Markdown 正文不会自动加入子代理提示词；工具调用中的 `prompt` 才是发送给 subagent 的权威任务内容。
 
+## 进化模式（Evolution）
+
+插件会为每个 agent 自动维护 `prefercmd`（已验证命令）和 `memory`（经验教训）两个文件，通过不断积累减少重复试错，降低 token 浪费。
+
+- **默认开启**。可通过配置 `evolution: false` 或环境变量 `SMART_SUBAGENT_EVOLUTION=false` 关闭。
+- 文件位于用户隐藏目录
+  `~/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` 和
+  `memory.md`——**不会出现在你项目的 `agents/` 文件夹里**。
+- 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限约 2000 token），让 subagent 直接从已验证的命令出发，不用重新摸索。
+- 前台运行结束后，插件会在最终输出中查找 `[[EVOLUTION]]` 块并合并新记录：
+
+  ```markdown
+  [[EVOLUTION]]
+  prefercmd:
+  - pnpm test  # 更快的测试运行器
+  memory:
+  - CI 环境不要用 --force
+  [[/EVOLUTION]]
+  ```
+
+- 自动去重，条目有上限（prefercmd 40 条、memory 25 条），超限丢最旧——注入 token 成本恒定。
+- 后台运行不记录（拿不到最终输出）。
+
+可通过 `smart-subagent/evolution` 的 `detectAgents(bindingsDir, templatesDir)` 程序化列出所有可用 agent key。
+
 ## 绑定目录
 
 在启动 DSH 的同一进程环境中设置绑定文件目录。相对路径从 DSH 启动工作目录解析。

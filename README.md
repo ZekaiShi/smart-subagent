@@ -102,8 +102,41 @@ injected), or pass your own `prompt` to override them:
 
 A template's `provider`/`model` must be registered in your DSH profile (the same
 validation as user bindings); an unregistered pair fails before any child starts.
-Override a built-in role by creating your own `<agent_key>.md` in the binding
+Overriding a built-in role works by creating your own `<agent_key>.md` in the binding
 directory — your file wins over the template.
+
+## Evolution mode
+
+The plugin continuously refines per-agent `prefercmd` (verified commands) and
+`memory` (lessons learned) files to reduce token waste on repeated runs by
+shortening the rediscovery loop.
+
+- **Default: on.** Disable with `evolution: false` in the plugin config or the
+  `SMART_SUBAGENT_EVOLUTION=false` environment variable.
+- Files live in the hidden user directory
+  `~/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` and `memory.md` —
+  they never appear in your project's `agents/` folder.
+- On each foreground run the plugin injects the two files as a bounded context
+  block (capped at ~2000 tokens) into the child prompt, so the subagent starts
+  from proven commands instead of re-deriving them.
+- At the end of a foreground run the plugin scans the final output for an
+  `[[EVOLUTION]]` block and merges new entries:
+
+  ```markdown
+  [[EVOLUTION]]
+  prefercmd:
+  - pnpm test  # faster test runner
+  memory:
+  - don't use --force on CI
+  [[/EVOLUTION]]
+  ```
+
+- Entries are deduplicated and kept within limits (40 prefercmd, 25 memory);
+  the oldest entries are dropped first, so injection cost stays bounded.
+- Background runs don't record (no final output is available to the caller).
+
+Use `detectAgents(bindingsDir, templatesDir)` from `smart-subagent/evolution`
+to list all available agent keys programmatically.
 
 ## Binding directory
 

@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { assertAgentKey, assertRegisteredModel, loadBinding, loadTemplate } from './binding.js'
+import { readEvolution, buildInjection, parseEvolutionBlock, recordEvolution, defaultEvolutionDir } from './evolution.js'
 
 function nonEmpty(value, field) {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -45,6 +46,25 @@ async function settleForeground(run) {
   return { kind: 'foreground', runId: run.id, output: execution.output }
 }
 
+async function loadAndInject(evolutionDir, agentKey, basePrompt) {
+  const { prefercmd, memory } = await readEvolution(evolutionDir, agentKey)
+  const block = buildInjection(prefercmd, memory)
+  return block ? basePrompt + block : basePrompt
+}
+
+async function settleForegroundAndRecord(run, agentKey, { evolution, evolutionDir }) {
+  const settled = await settleForeground(run)
+  if (evolution) {
+    const text = partialText(settled.output)
+    const updates = parseEvolutionBlock(text)
+    if (updates.prefercmd.length > 0 || updates.memory.length > 0) {
+      // Best-effort record: never let evolution failures break the main flow.
+      await recordEvolution(evolutionDir, agentKey, updates).catch(() => {})
+    }
+  }
+  return settled
+}
+
 export function createApply(defineTool) {
   return function apply(ctx, config = {}) {
     const bindingsDir = resolve(config.bindingsDir ?? process.env.DSH_AGENT_BINDINGS_DIR ?? 'agents')
@@ -55,10 +75,12 @@ export function createApply(defineTool) {
     if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) {
       throw new Error('smart-subagent: maxDepth must be a non-negative safe integer')
     }
+    const evolution = config.evolution !== false && process.env.SMART_SUBAGENT_EVOLUTION !== 'false'
+    const evolutionDir = config.evolutionDir ? resolve(config.evolutionDir) : defaultEvolutionDir()
 
     ctx.tools.register(defineTool({
       name: toolName,
-      description: 'Start a fresh subagent selected by a stable agent_key. The key chooses a registered provider/model route and, for the built-in official roles (code-reviewer, researcher, wps-worker), its role prompt — pass an explicit `prompt` to override the built-in role instructions. The key is not added to the child prompt.',
+      description: 'Start a fresh subagent selected by a stable agent_key. The key chooses a registered provider/model route and, for the built-in official roles (code-reviewer, researcher, wps-worker), its role prompt — pass an explicit `prompt` to override the built-in role instructions. Evolution mode (default on) maintains prefercmd/memory files per agent to reduce token waste on repeated runs. The key is not added to the child prompt.',
       parameters: {
         agent_key: {
           type: 'string',
@@ -120,9 +142,13 @@ export function createApply(defineTool) {
         if (binding === undefined && template === undefined) {
           // No user binding and no built-in template: preserve DSH's native
           // parent-model inheritance (no agentOptions, no error).
+          const rawPrompt = nonEmpty(args.prompt ?? '', 'prompt')
+          const evolved = evolution
+            ? await loadAndInject(evolutionDir, agentKey, rawPrompt)
+            : rawPrompt
           const request = {
             label: description,
-            prompt: [{ type: 'text', text: nonEmpty(args.prompt ?? '', 'prompt') }],
+            prompt: [{ type: 'text', text: evolved }],
             parent,
             maxDepth,
           }
@@ -136,7 +162,7 @@ export function createApply(defineTool) {
             return { kind: 'continuable', subagentId: started.childId }
           }
           const run = await ctx.subagents.start(provider, { ...request, signal: exec.signal })
-          return settleForeground(run)
+          return settleForegroundAndRecord(run, agentKey, { evolution, evolutionDir })
         }
         const route = binding ?? template
         const agentOptions = await assertRegisteredModel(ctx.llm, route)
@@ -144,9 +170,12 @@ export function createApply(defineTool) {
         // `prompt` for official roles. For a user binding the prompt is still
         // required — the binding carries routing metadata only.
         const prompt = args.prompt ?? ''
-        const effectivePrompt = (template !== undefined && prompt.trim() === '')
+        const basePrompt = (template !== undefined && prompt.trim() === '')
           ? template.rolePrompt
           : nonEmpty(prompt, 'prompt')
+        const effectivePrompt = evolution
+          ? await loadAndInject(evolutionDir, agentKey, basePrompt)
+          : basePrompt
         const request = {
           label: description,
           prompt: [{ type: 'text', text: effectivePrompt }],
@@ -166,7 +195,7 @@ export function createApply(defineTool) {
         }
 
         const run = await ctx.subagents.start(provider, { ...request, signal: exec.signal })
-        return settleForeground(run)
+        return settleForegroundAndRecord(run, agentKey, { evolution, evolutionDir })
       },
     }))
   }

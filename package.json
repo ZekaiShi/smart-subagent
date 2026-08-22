@@ -15,6 +15,7 @@
     "plugin.js",
     "binding.js",
     "evolution.js",
+    "scope.js",
     "cordis.patch.yml",
     "templates",
     "dsh",
@@ -24,7 +25,7 @@
   ],
   "scripts": {
     "test": "node --test --test-isolation=none",
-    "check": "node --check index.js && node --check plugin.js && node --check binding.js && node --check evolution.js",
+    "check": "node --check index.js && node --check plugin.js && node --check binding.js && node --check evolution.js && node --check scope.js",
     "prepack": "npm run check && npm test"
   },
   "keywords": [

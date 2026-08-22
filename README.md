@@ -113,14 +113,19 @@ shortening the rediscovery loop.
 
 - **Default: on.** Disable with `evolution: false` in the plugin config or the
   `SMART_SUBAGENT_EVOLUTION=false` environment variable.
-- **Project-scoped by default.** Evolution files live under the DSH launch
-  working directory:
+- **Per-conversation workspace, not the launch directory.** Each time the
+  `smart_subagent` tool runs, the plugin reads the conversation's working
+  directory (`exec.agent.session.header.cwd`, the same field the DSH shell tool
+  resolves its workdir from) and walks up to the nearest folder that owns an
+  `agents/` directory — the project workspace. That folder becomes the bindings
+  directory and evolution lives under
   `<project>/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` and
-  `memory.md` — the same base the `agents/` bindings directory resolves from,
-  so each project/conversation keeps its own evolution state with no
-  cross-project contamination. Override per project with
-  `SMART_SUBAGENT_EVOLUTION_DIR` (absolute path) or `evolutionDir`. The files
-  never appear in your project's `agents/` folder.
+  `memory.md`. Different projects therefore never share subagent bindings or
+  evolution state, and nothing depends on where the DSH process was launched.
+  When a conversation has no session cwd or its workspace has no `agents/`
+  folder, the plugin falls back to `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR`
+  / the process working directory. The evolution files never appear in the
+  project's `agents/` folder.
 - On each foreground run the plugin injects the two files as a bounded context
   block (capped at ~2000 tokens) into the child prompt, so the subagent starts
   from proven commands instead of re-deriving them.
@@ -142,6 +147,22 @@ shortening the rediscovery loop.
 
 Use `detectAgents(bindingsDir, templatesDir)` from `smart-subagent/evolution`
 to list all available agent keys programmatically.
+
+## Settings card
+
+Under the web profile, Settings → Plugins shows a **smart-subagent** card that:
+
+- **Groups subagents by project.** It scans `SMART_SUBAGENT_PROJECTS_DIR`
+  (fallback: the profile's working directory) for directories that own an
+  `agents/` folder and lists each project separately. Point
+  `SMART_SUBAGENT_PROJECTS_DIR` at the workspace root that contains your
+  projects to see them all (e.g. `D:\trae`).
+- **Shows each agent's routing model** (provider · model from its front matter)
+  and lets you **switch it with a dropdown** for project bindings — the change
+  rewrites the `model:` line of the agent's `.md` file, the same file a
+  developer would edit by hand. Built-in template agents are shown read-only.
+- Edits each agent's hidden `prefercmd.md` / `memory.md` (per-project evolution
+  files) and flips the global evolution toggle.
 
 ## Binding directory
 

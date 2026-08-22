@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -173,6 +173,10 @@ test('settings route /smart-subagent/agents returns project scope', async () => 
   const ctx = {
     tools: { register() {} },
     inject: (services, cb) => cb({ webServer, settings }),
+    llm: {
+      listProviders: () => [{ id: 'deepseek-official' }],
+      listModels: async () => [{ provider: 'deepseek-official', id: 'deepseek-v4-flash' }],
+    },
   }
   createApply(v => v)(ctx, {
     bindingsDir, templatesDir, evolution: true, evolutionDir, maxDepth: 3,
@@ -192,4 +196,155 @@ test('settings route /smart-subagent/agents returns project scope', async () => 
   assert.equal(typeof captured.scope.projectName, 'string')
   assert.ok(captured.scope.projectName.length > 0)
   assert.equal(captured.scope.cwd, process.cwd())
+})
+
+test('settings route /smart-subagent/projects groups agents by project with model info', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'smart-sub-projbase-'))
+  const agentsDir = join(base, 'proj-x', 'agents')
+  await mkdir(agentsDir, { recursive: true })
+  await writeFile(
+    join(agentsDir, 'writer.md'),
+    '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
+    'utf8',
+  )
+  const routes = new Map()
+  const webServer = { register(route) { routes.set(route.path, route) } }
+  const settings = { register() {} }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => cb({ webServer, settings }),
+    llm: {
+      listProviders: () => [{ id: 'deepseek-official' }],
+      listModels: async () => [
+        { provider: 'deepseek-official', id: 'deepseek-v4-flash' },
+        { provider: 'deepseek-official', id: 'deepseek-v3' },
+      ],
+    },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: base, maxDepth: 3,
+  })
+  const route = routes.get('/smart-subagent/projects')
+  assert.ok(route, 'projects route registered')
+  let captured
+  const res = {
+    writeHead(status, headers) { this.status = status; this.headers = headers },
+    end(body) { captured = JSON.parse(body) },
+  }
+  await route.handler({}, res)
+  assert.equal(res.status, 200)
+  assert.equal(captured.projects.length, 1)
+  const project = captured.projects[0]
+  assert.equal(project.projectName, 'proj-x')
+  // 3 built-in templates + the project binding
+  assert.equal(project.agents.length, 4)
+  const writer = project.agents.find((a) => a.agentKey === 'writer')
+  assert.ok(writer, 'binding agent present')
+  assert.equal(writer.source, 'binding')
+  assert.equal(writer.provider, 'deepseek-official')
+  assert.equal(writer.model, 'deepseek-v4-flash')
+  assert.equal(writer.editable, true)
+  const reviewer = project.agents.find((a) => a.agentKey === 'code-reviewer')
+  assert.ok(reviewer, 'template agent present')
+  assert.equal(reviewer.source, 'template')
+  assert.equal(reviewer.editable, false)
+  assert.deepEqual(captured.modelsByProvider['deepseek-official'], ['deepseek-v4-flash', 'deepseek-v3'])
+})
+
+test('settings route /smart-subagent/model rewrites the binding front matter', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'smart-sub-modelbase-'))
+  const agentsDir = join(base, 'proj-m', 'agents')
+  await mkdir(agentsDir, { recursive: true })
+  const bindingFile = join(agentsDir, 'writer.md')
+  await writeFile(
+    bindingFile,
+    '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
+    'utf8',
+  )
+  const routes = new Map()
+  const webServer = { register(route) { routes.set(route.path, route) } }
+  const settings = { register() {} }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => cb({ webServer, settings }),
+    llm: { listProviders: () => [], listModels: async () => [] },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: base, maxDepth: 3,
+  })
+  const route = routes.get('/smart-subagent/model')
+  assert.ok(route, 'model route registered')
+  let captured
+  const res = {
+    writeHead(status, headers) { this.status = status; this.headers = headers },
+    end(body) { captured = JSON.parse(body) },
+  }
+  const req = {
+    method: 'POST',
+    [Symbol.asyncIterator]() {
+      const body = JSON.stringify({ projectRoot: join(base, 'proj-m'), agentKey: 'writer', model: 'deepseek-v3' })
+      let sent = false
+      return {
+        next: async () => (sent ? { done: true } : ((sent = true), { done: false, value: Buffer.from(body) })),
+      }
+    },
+  }
+  await route.handler(req, res)
+  assert.equal(res.status, 200)
+  assert.equal(captured.ok, true)
+  assert.equal(captured.model, 'deepseek-v3')
+  const after = await readFile(bindingFile, 'utf8')
+  assert.match(after, /^model: deepseek-v3$/m)
+  assert.match(after, /role text/)
+})
+
+test('execute uses the conversation workspace scope for bindings + evolution', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'smart-sub-sesbase-'))
+  const agentsDir = join(base, 'proj-s', 'agents')
+  await mkdir(agentsDir, { recursive: true })
+  await writeFile(
+    join(agentsDir, 'writer.md'),
+    '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
+    'utf8',
+  )
+  // A DIFFERENT bindings dir configured on the plugin — the session workspace
+  // must win over it.
+  const fallbackBindings = await mkdtemp(join(tmpdir(), 'smart-sub-fb-'))
+  const starts = []
+  const ctx = {
+    tools: { register() {} },
+    llm: {
+      listProviders: () => [{ id: 'deepseek-official' }],
+      listModels: async () => [{ provider: 'deepseek-official', id: 'deepseek-v4-flash' }],
+    },
+    subagents: {
+      async start(provider, request) {
+        starts.push(request)
+        return {
+          id: 'r-1',
+          result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'done' }] }),
+          async dispose() {},
+        }
+      },
+      async startContinuable(spec) {
+        starts.push(spec)
+        return { childId: 'bg-1', messageId: 'm-1' }
+      },
+    },
+  }
+  let definition
+  ctx.tools = { register(value) { definition = value } }
+  createApply(v => v)(ctx, {
+    bindingsDir: fallbackBindings, templatesDir, evolution: true, maxDepth: 3,
+  })
+  const sessionExec = {
+    agent: { session: { header: { cwd: join(base, 'proj-s') } } },
+    signal: new AbortController().signal,
+  }
+  await definition.execute({
+    agent_key: 'writer', description: 'write', prompt: 'write the chapter', run_in_background: false,
+  }, sessionExec)
+  assert.equal(starts.length, 1)
+  // routed with the project binding's model
+  assert.equal(starts[0].agentOptions.model, 'deepseek-v4-flash')
 })

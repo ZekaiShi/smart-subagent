@@ -70,10 +70,10 @@ model: deepseek-v4-flash
 插件会为每个 agent 自动维护 `prefercmd`（已验证命令）和 `memory`（经验教训）两个文件，通过不断积累减少重复试错，降低 token 浪费。
 
 - **默认开启**。可通过配置 `evolution: false` 或环境变量 `SMART_SUBAGENT_EVOLUTION=false` 关闭。
-- **默认按项目隔离**。进化文件位于 DSH 启动工作目录下：
+- **按对话工作区隔离，不依赖启动目录**。每次调用 `smart_subagent` 时，插件读取对话的工作目录（`exec.agent.session.header.cwd`，与 DSH 终端工具解析 workdir 的字段一致），向上找到最近的、拥有 `agents/` 目录的文件夹作为项目工作区；该目录即绑定目录，进化文件位于
   `<项目>/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` 和
-  `memory.md`——与 `agents/` 绑定目录同一基准，每个项目/对话独立进化、互不污染。
-  可按项目用 `SMART_SUBAGENT_EVOLUTION_DIR`（绝对路径）或 `evolutionDir` 覆盖。
+  `memory.md`——不同项目各自独立绑定与进化、互不污染，与 DSH 进程从哪启动无关。
+  当对话没有会话 cwd、或其工作区没有 `agents/` 文件夹时，回退到 `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR` / 进程工作目录。
   文件**不会出现在你项目的 `agents/` 文件夹里**。
 - 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限约 2000 token），让 subagent 直接从已验证的命令出发，不用重新摸索。
 - 前台运行结束后，插件会在最终输出中查找 `[[EVOLUTION]]` 块并合并新记录：
@@ -91,6 +91,16 @@ model: deepseek-v4-flash
 - 后台运行不记录（拿不到最终输出）。
 
 可通过 `smart-subagent/evolution` 的 `detectAgents(bindingsDir, templatesDir)` 程序化列出所有可用 agent key。
+
+## 设置卡片
+
+web profile 下，设置 → 插件会出现一张 **smart-subagent** 卡片：
+
+- **按项目分组展示 subagents**。扫描 `SMART_SUBAGENT_PROJECTS_DIR`（缺省为 profile 工作目录）下所有拥有 `agents/` 文件夹的目录，逐项目列出。
+  把 `SMART_SUBAGENT_PROJECTS_DIR` 指向包含你项目的工作区根目录即可全部显示（例如 `D:\trae`）。
+- **显示每个 agent 当前路由模型**（front matter 的 provider · model），项目绑定可用**下拉切换模型**——改动直接改写该 agent `.md` 文件的 `model:` 行（与手改同一文件）。
+  内置模板 agent 只读显示。
+- 编辑每个 agent 的隐藏 `prefercmd.md` / `memory.md`（按项目的进化文件），并切换全局进化开关。
 
 ## 绑定目录
 

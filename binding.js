@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const AGENT_KEY = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
@@ -44,6 +44,35 @@ export async function loadBinding(bindingsDir, agentKey) {
     throw new Error(`smart-subagent: failed to read ${filename}`, { cause: error })
   }
   return { ...parseBindingHeader(text, filename), filename }
+}
+
+/**
+ * Rewrite the `model:` line in a binding file's 4-line front matter and return
+ * the new header. Preserves everything after the front matter untouched, so the
+ * settings card can switch an agent's routing model by editing the same file a
+ * developer would edit by hand.
+ *
+ * @param {string} filename - absolute path to the binding `.md` file
+ * @param {string} model - new model id
+ * @returns {Promise<{provider: string, model: string}>}
+ */
+export async function setBindingModel(filename, model) {
+  if (typeof model !== 'string' || model.length === 0) {
+    throw new TypeError('smart-subagent: model must be a non-empty string')
+  }
+  const text = await readFile(filename, 'utf8')
+  const body = text.replace(/^\uFEFF/, '')
+  const lines = body.split(/\r?\n/)
+  if (lines[0] !== FRONT_MATTER_DELIMITER) {
+    throw new Error(`${filename}: line 1 must be exactly "---"`)
+  }
+  if (!MODEL_LINE.exec(lines[2] ?? '')) {
+    throw new Error(`${filename}: line 3 must be exactly "model: <registered-model-id>"`)
+  }
+  lines[2] = `model: ${model}`
+  const updated = lines.join('\n')
+  await writeFile(filename, updated, 'utf8')
+  return parseBindingHeader(updated, filename)
 }
 
 /**

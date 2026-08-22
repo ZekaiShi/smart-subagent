@@ -107,6 +107,24 @@ The plugin registers `smart_subagent` by default.
 
 An invalid binding fails before a child is created. A missing binding file is different: the plugin omits `agentOptions`, preserving the official DSH inheritance behavior.
 
+## Spawn vs fork provider
+
+The plugin is provider-agnostic: the same routing, validation, and result handling
+apply regardless of which DSH in-process subagent provider is configured.
+
+| Provider | Inherited context | Use for |
+| --- | --- | --- |
+| `spawn` (default) | none — fresh child, zero parent context | one-shot tasks fully described by `prompt` |
+| `fork` | parent's completed turns (balanced prefix up to the last `turn/end`) | tasks that build on the current conversation |
+
+To route via the fork provider, set `provider: fork` in the plugin config (see
+[Bundle configuration](#bundle-configuration)). `agentOptions` — the validated
+`provider`/`model` pair from a binding file — is passed to the child identically
+for both providers; only the inherited conversation seed differs.
+
+Fork inherits conversation history only: the child still gets a fresh scope and
+does not inherit the parent's tool restrictions or authority.
+
 ## DeepSeek reasoning effort
 
 `smart-subagent` does not override `reasoningEffort`. With `provider: deepseek-official`, the official DeepSeek adapter uses its configured default; the default DSH setting is `high`.
@@ -122,6 +140,17 @@ The bundled patch installs the following defaults:
   config:
     bindingsDir: /absolute/path/to/agents
     provider: spawn
+    toolName: smart_subagent
+    maxDepth: 3
+```
+
+To use fork-mode routing instead, override `provider` to `fork`:
+
+```yaml
+- id: smart-subagent
+  config:
+    bindingsDir: /absolute/path/to/agents
+    provider: fork
     toolName: smart_subagent
     maxDepth: 3
 ```
@@ -148,7 +177,7 @@ pnpm run check
 npm pack --dry-run
 ```
 
-The test suite covers strict front matter parsing, path safety, model registration checks, parent-route inheritance, and foreground/background child creation.
+The test suite covers strict front matter parsing, path safety, model registration checks, parent-route inheritance, foreground/background child creation, and the same routing guarantees under both the `spawn` and `fork` providers.
 
 ## License
 

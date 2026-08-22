@@ -23,6 +23,9 @@ window.__ModuleLoader__.load({
       scopeBindings: 'Bindings',
       scopeEvolution: 'Evolution',
       scopeProjects: 'Projects scan',
+      scanSave: 'Save scan dir',
+      builtin: 'Built-in templates',
+      builtinHint: 'official roles, always available',
       projects: 'Subagents by project',
       projectsHint: 'each project owns its agents/ + evolution',
       model: 'Routing model',
@@ -40,9 +43,10 @@ window.__ModuleLoader__.load({
       saveFailed: 'Save failed',
       toggleFailed: 'Toggle failed',
       modelFailed: 'Model update failed',
+      configFailed: 'Config update failed',
       loading: 'Loading…',
       empty: 'No projects with an agents/ folder found',
-      scanHint: 'Point SMART_SUBAGENT_PROJECTS_DIR at the workspace root that contains your projects to detect them here.',
+      scanHint: 'Type a workspace root (e.g. D:\\trae) that contains your projects, or set SMART_SUBAGENT_PROJECTS_DIR.',
       open: 'Open',
     }
     var ZH = {
@@ -52,6 +56,9 @@ window.__ModuleLoader__.load({
       scopeBindings: '绑定目录',
       scopeEvolution: '进化目录',
       scopeProjects: '项目扫描目录',
+      scanSave: '保存扫描目录',
+      builtin: '内置模板',
+      builtinHint: '官方角色，始终可用',
       projects: '按项目分组的 subagents',
       projectsHint: '每个项目独立拥有 agents/ 与进化文件',
       model: '路由模型',
@@ -69,6 +76,7 @@ window.__ModuleLoader__.load({
       saveFailed: '保存失败',
       toggleFailed: '切换失败',
       modelFailed: '模型更新失败',
+      configFailed: '配置更新失败',
       loading: '加载中…',
       empty: '未找到含 agents/ 文件夹的项目',
       scanHint: '把 SMART_SUBAGENT_PROJECTS_DIR 指向包含你项目的工作区根目录，即可在这里检测到项目。',
@@ -169,17 +177,21 @@ window.__ModuleLoader__.load({
         var summaryState = react.useState(null)
         var noteState = react.useState('')
         var editorsState = react.useState({})
+        var scanDirState = react.useState('')
         var open = openState[0]
         var summary = summaryState[0]
         var note = noteState[0]
         var editors = editorsState[0]
         var setEditors = editorsState[1]
+        var scanDir = scanDirState[0]
+        var setScanDir = scanDirState[1]
 
         var load = react.useCallback(() => {
           fetch('/smart-subagent/projects')
             .then((r) => r.json().then((body) => (r.ok ? body : Promise.reject(new Error(body.error || '')))))
             .then((next) => {
               summaryState[1](next)
+              setScanDir((next.scope && next.scope.projectsBaseDir) || '')
               noteState[1]('')
             })
             .catch((error) => noteState[1](noteFrom(error, t.loadFailed)))
@@ -188,6 +200,24 @@ window.__ModuleLoader__.load({
         react.useEffect(() => {
           if (open && summary === null) load()
         }, [open, summary, load])
+
+        var saveScanDir = () => {
+          var value = scanDir.trim()
+          if (value.length === 0) return
+          noteState[1](t.saving)
+          fetch('/smart-subagent/config', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ projectsBaseDir: value }),
+          })
+            .then((r) => r.json().then((body) => (r.ok ? body : Promise.reject(new Error(body.error || '')))))
+            .then((body) => {
+              summaryState[1]((prev) => ({ ...(prev || {}), scope: { ...((prev && prev.scope) || {}), projectsBaseDir: body.projectsBaseDir } }))
+              noteState[1]('')
+              load()
+            })
+            .catch((error) => noteState[1](noteFrom(error, t.configFailed)))
+        }
 
         var toggle = (value) => {
           var next = { ...(summary || {}), evolution: value }
@@ -293,6 +323,7 @@ window.__ModuleLoader__.load({
             )
           } else {
             var projects = Array.isArray(summary.projects) ? summary.projects : []
+            var builtin = Array.isArray(summary.builtin) ? summary.builtin : []
             var modelsByProvider = summary.modelsByProvider || {}
             var projectSections = projects.map((project) => {
               var projectRoot = project.projectRoot
@@ -528,40 +559,59 @@ window.__ModuleLoader__.load({
             body = h(
               'div',
               null,
-              summary.scope
-                ? h(
-                    'div',
-                    {
-                      style: {
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        padding: '10px 0',
-                        borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
-                        fontSize: '12px',
-                      },
+              h(
+                'div',
+                {
+                  style: {
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 0',
+                    borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
+                    fontSize: '13px',
+                  },
+                },
+                h('span', { style: { fontWeight: 600, flex: 'none' } }, t.scopeProjects),
+                h('input', {
+                  type: 'text',
+                  value: scanDir,
+                  placeholder: 'D:\\trae',
+                  spellCheck: false,
+                  onChange: (event) => setScanDir(event.target.value),
+                  style: {
+                    flex: 1,
+                    minWidth: 0,
+                    font: 'inherit',
+                    fontSize: '12px',
+                    padding: '5px 8px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
+                    background: 'transparent',
+                    color: 'inherit',
+                  },
+                }),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: saveScanDir,
+                    style: {
+                      appearance: 'none',
+                      font: 'inherit',
+                      fontSize: '12px',
+                      lineHeight: 1.5,
+                      cursor: 'pointer',
+                      border: '1px solid transparent',
+                      borderRadius: '8px',
+                      padding: '5px 12px',
+                      background: 'var(--dsw-alias-label-primary, currentColor)',
+                      color: 'var(--dsw-alias-bg-layer-3, rgba(127,127,127,0.05))',
+                      flex: 'none',
                     },
-                    h(
-                      'div',
-                      { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                      h('span', { style: { fontWeight: 600 } }, t.scope),
-                      h(
-                        'span',
-                        {
-                          style: {
-                            padding: '1px 8px',
-                            borderRadius: '999px',
-                            border: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
-                            color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
-                          },
-                        },
-                        summary.scope.projectName || '',
-                      ),
-                    ),
-                    h('div', { style: { color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))' } },
-                      t.scopeProjects + ': ' + (summary.scope.projectsBaseDir || '')),
-                  )
-                : null,
+                  },
+                  t.scanSave,
+                ),
+              ),
               h(
                 'label',
                 {
@@ -575,6 +625,56 @@ window.__ModuleLoader__.load({
                 h('span', { style: { fontWeight: 500 } }, t.toggle),
                 h('span', { style: { color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))', fontSize: '12px' } }, t.toggleHint),
               ),
+              builtin.length > 0
+                ? h(
+                    'div',
+                    { style: { padding: '4px 0' } },
+                    h(
+                      'div',
+                      { style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0 2px' } },
+                      h('span', { style: { fontSize: '13px', fontWeight: 600 } }, t.builtin),
+                      h(
+                        'span',
+                        { style: { fontSize: '12px', color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))' } },
+                        t.builtinHint,
+                      ),
+                    ),
+                    builtin.map((agent) =>
+                      h(
+                        'div',
+                        {
+                          key: agent.agentKey,
+                          style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 4px' },
+                        },
+                        h('span', { style: { fontSize: '13px', fontWeight: 500 } }, agent.agentKey),
+                        h(
+                          'span',
+                          {
+                            style: {
+                              fontSize: '11px',
+                              padding: '1px 8px',
+                              borderRadius: '999px',
+                              border: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
+                              color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                            },
+                          },
+                          (t.source[agent.source] || agent.source),
+                        ),
+                        h(
+                          'span',
+                          {
+                            style: {
+                              marginLeft: 'auto',
+                              fontSize: '12px',
+                              color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                            },
+                          },
+                          (agent.provider || '') + ' / ' + (agent.model || ''),
+                        ),
+                      ),
+                    ),
+                  )
+                : null,
               fieldRow(
                 h(
                   'span',

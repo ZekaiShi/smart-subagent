@@ -249,6 +249,52 @@ test('settings route /smart-subagent/projects groups agents by project with mode
   assert.equal(reviewer.source, 'template')
   assert.equal(reviewer.editable, false)
   assert.deepEqual(captured.modelsByProvider['deepseek-official'], ['deepseek-v4-flash', 'deepseek-v3'])
+  // built-in templates come back as their own always-visible group
+  assert.ok(Array.isArray(captured.builtin), 'builtin present')
+  assert.equal(captured.builtin.length, 3)
+  const builtinReviewer = captured.builtin.find((a) => a.agentKey === 'code-reviewer')
+  assert.ok(builtinReviewer)
+  assert.equal(builtinReviewer.editable, false)
+  assert.equal(typeof builtinReviewer.model, 'string')
+  assert.equal(captured.scope.projectsBaseDir, base)
+})
+
+test('settings route /smart-subagent/config updates the project scan dir and /projects rescans', async () => {
+  const baseA = await mkdtemp(join(tmpdir(), 'smart-sub-cfgA-'))
+  const baseB = await mkdtemp(join(tmpdir(), 'smart-sub-cfgB-'))
+  await mkdir(join(baseA, 'proj-a', 'agents'), { recursive: true })
+  await mkdir(join(baseB, 'proj-b', 'agents'), { recursive: true })
+  const routes = new Map()
+  const webServer = { register(route) { routes.set(route.path, route) } }
+  const settings = { register() {} }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => cb({ webServer, settings }),
+    llm: { listProviders: () => [], listModels: async () => [] },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: baseA, templatesDir, evolution: true, projectsBaseDir: baseA, maxDepth: 3,
+  })
+  const post = (path, payload) => {
+    const req = {
+      method: 'POST',
+      [Symbol.asyncIterator]() {
+        const body = JSON.stringify(payload)
+        let sent = false
+        return { next: async () => (sent ? { done: true } : ((sent = true), { done: false, value: Buffer.from(body) })) }
+      },
+    }
+    let captured
+    const res = { writeHead(status) { this.status = status }, end(body) { captured = JSON.parse(body) } }
+    return routes.get(path).handler(req, res).then(() => captured)
+  }
+  const before = await post('/smart-subagent/projects', {})
+  assert.deepEqual(before.projects.map((p) => p.projectName), ['proj-a'])
+  const cfg = await post('/smart-subagent/config', { projectsBaseDir: baseB })
+  assert.equal(cfg.projectsBaseDir, baseB)
+  const after = await post('/smart-subagent/projects', {})
+  assert.deepEqual(after.projects.map((p) => p.projectName), ['proj-b'])
+  assert.equal(after.scope.projectsBaseDir, baseB)
 })
 
 test('settings route /smart-subagent/model rewrites the binding front matter', async () => {

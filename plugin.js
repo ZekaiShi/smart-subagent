@@ -14,20 +14,19 @@ import {
 } from './evolution.js'
 import { resolveSessionScope, detectProjects, findProjectRoot } from './scope.js'
 
-function loadRuntimeConfig(evolutionDir, fallback) {
+function loadRuntimeConfig(evolutionDir) {
   try {
-    const parsed = JSON.parse(readFileSync(join(evolutionDir, 'config.json'), 'utf8'))
-    return typeof parsed?.evolution === 'boolean' ? parsed.evolution : fallback
+    return JSON.parse(readFileSync(join(evolutionDir, 'config.json'), 'utf8')) ?? {}
   } catch {
-    return fallback
+    return {}
   }
 }
 
-function saveRuntimeConfig(evolutionDir, evolution) {
+function saveRuntimeConfig(evolutionDir, config) {
   try {
-    writeFileSync(join(evolutionDir, 'config.json'), JSON.stringify({ evolution }, null, 2), 'utf8')
+    writeFileSync(join(evolutionDir, 'config.json'), JSON.stringify(config, null, 2), 'utf8')
   } catch (error) {
-    console.error(`[smart-subagent] failed to persist evolution config: ${error}`)
+    console.error(`[smart-subagent] failed to persist runtime config: ${error}`)
   }
 }
 
@@ -55,8 +54,19 @@ async function readJsonBody(req) {
 // with the web profile; headless profiles never call this. Follows modlens:
 // the card talks to routes rather than a settings schema, because evolution
 // files live on disk and the toggle must be applied at runtime.
-function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionDir, state, scope, projectsBaseDir, llm }) {
+function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionDir, state, scope, runtime, llm }) {
   const error = (error) => ({ error: String(error?.message ?? error) })
+
+  const projectsBaseDir = () => runtime.projectsBaseDir
+
+  /** Read provider/model for an agent from its binding (or template) file. */
+  const routeInfo = async (dir, agentKey) => {
+    const binding = await loadBinding(dir, agentKey)
+    if (binding !== undefined) return { provider: binding.provider, model: binding.model, editable: true }
+    const template = await loadTemplate(templatesDir, agentKey)
+    if (template !== undefined) return { provider: template.provider, model: template.model, editable: false }
+    return { provider: undefined, model: undefined, editable: false }
+  }
 
   webServer.register({
     name: 'smart-subagent-agents',
@@ -78,7 +88,8 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
     path: '/smart-subagent/projects',
     handler: async (req, res) => {
       try {
-        const found = await detectProjects(projectsBaseDir)
+        const baseDir = projectsBaseDir()
+        const found = await detectProjects(baseDir)
         const projects = []
         const modelsByProvider = new Map()
         for (const project of found) {
@@ -87,32 +98,21 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
           // model is editable (only project binding files are editable).
           const enriched = []
           for (const agent of agents) {
-            let provider, model
-            const binding = await loadBinding(project.agentsDir, agent.agentKey)
-            if (binding !== undefined) {
-              provider = binding.provider
-              model = binding.model
-            } else {
-              const template = await loadTemplate(templatesDir, agent.agentKey)
-              if (template !== undefined) {
-                provider = template.provider
-                model = template.model
-              }
-            }
-            if (provider !== undefined && !modelsByProvider.has(provider) && llm !== undefined) {
+            const info = await routeInfo(project.agentsDir, agent.agentKey)
+            if (info.provider !== undefined && !modelsByProvider.has(info.provider) && llm !== undefined) {
               try {
-                const listed = await llm.listModels(provider)
-                modelsByProvider.set(provider, listed.map((entry) => entry.id))
+                const listed = await llm.listModels(info.provider)
+                modelsByProvider.set(info.provider, listed.map((entry) => entry.id))
               } catch {
-                modelsByProvider.set(provider, [])
+                modelsByProvider.set(info.provider, [])
               }
             }
             enriched.push({
               agentKey: agent.agentKey,
               source: agent.source,
-              provider,
-              model,
-              editable: binding !== undefined,
+              provider: info.provider,
+              model: info.model,
+              editable: info.editable,
             })
           }
           projects.push({
@@ -122,10 +122,33 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
             agents: enriched,
           })
         }
+        // Built-in templates as their own always-visible group (a non-existent
+        // bindings dir makes detectAgents list templates only).
+        const templateAgents = await detectAgents(join(templatesDir, '__none__'), templatesDir)
+        const builtin = []
+        for (const agent of templateAgents) {
+          const info = await routeInfo(join(templatesDir, '__none__'), agent.agentKey)
+          if (info.provider !== undefined && !modelsByProvider.has(info.provider) && llm !== undefined) {
+            try {
+              const listed = await llm.listModels(info.provider)
+              modelsByProvider.set(info.provider, listed.map((entry) => entry.id))
+            } catch {
+              modelsByProvider.set(info.provider, [])
+            }
+          }
+          builtin.push({
+            agentKey: agent.agentKey,
+            source: 'template',
+            provider: info.provider,
+            model: info.model,
+            editable: false,
+          })
+        }
         sendJson(res, 200, {
           projects,
+          builtin,
           evolution: state.evolution,
-          scope,
+          scope: { ...scope, projectsBaseDir: baseDir },
           modelsByProvider: Object.fromEntries(modelsByProvider),
         })
       } catch (cause) {
@@ -215,9 +238,15 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
         const body = await readJsonBody(req)
         if (typeof body.evolution === 'boolean') {
           state.evolution = body.evolution
-          saveRuntimeConfig(evolutionDir, body.evolution)
         }
-        sendJson(res, 200, { evolution: state.evolution })
+        if (typeof body.projectsBaseDir === 'string' && body.projectsBaseDir.trim().length > 0) {
+          runtime.projectsBaseDir = resolve(body.projectsBaseDir.trim())
+        }
+        saveRuntimeConfig(evolutionDir, {
+          evolution: state.evolution,
+          projectsBaseDir: runtime.projectsBaseDir,
+        })
+        sendJson(res, 200, { evolution: state.evolution, projectsBaseDir: runtime.projectsBaseDir })
       } catch (cause) {
         sendJson(res, 500, error(cause))
       }
@@ -307,12 +336,18 @@ export function createApply(defineTool) {
     // Directory scanned by the settings card to group subagents by project.
     // The card (browser) has no conversation context, so this defaults to the
     // profile's working directory and can be pointed at the workspace root that
-    // contains the projects (e.g. SMART_SUBAGENT_PROJECTS_DIR=D:\trae).
+    // contains the projects (e.g. SMART_SUBAGENT_PROJECTS_DIR=D:\trae, or set
+    // in the card UI). Persisted in <evolutionDir>/config.json; the card can
+    // change it at runtime.
+    const persistedConfig = loadRuntimeConfig(evolutionDir)
     const projectsBaseDir = config.projectsBaseDir
       ? resolve(config.projectsBaseDir)
       : (process.env.SMART_SUBAGENT_PROJECTS_DIR
         ? resolve(process.env.SMART_SUBAGENT_PROJECTS_DIR)
-        : process.cwd())
+        : (typeof persistedConfig.projectsBaseDir === 'string' && persistedConfig.projectsBaseDir.length > 0
+          ? resolve(persistedConfig.projectsBaseDir)
+          : process.cwd()))
+    const runtime = { projectsBaseDir }
     // The scope shown in the settings card: which project/conversation this
     // instance manages, so per-project subagent + evolution management is
     // unambiguous when the same profile serves multiple projects.
@@ -322,13 +357,15 @@ export function createApply(defineTool) {
       projectName: cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd,
       bindingsDir,
       evolutionDir,
-      projectsBaseDir,
+      projectsBaseDir: runtime.projectsBaseDir,
     })
     // Runtime state: `evolution` can be flipped by the settings card and
     // persists to <evolutionDir>/config.json. A hard config/env disable still
     // wins over the persisted toggle.
     const hardDisabled = config.evolution === false || process.env.SMART_SUBAGENT_EVOLUTION === 'false'
-    const state = { evolution: hardDisabled ? false : loadRuntimeConfig(evolutionDir, true) }
+    const state = {
+      evolution: hardDisabled ? false : (typeof persistedConfig.evolution === 'boolean' ? persistedConfig.evolution : true),
+    }
 
     // Browser-half surface. Optional: webServer exists only under the web
     // profile, and settings only when the settings page can dispatch cards.
@@ -342,7 +379,7 @@ export function createApply(defineTool) {
             evolutionDir,
             state,
             scope,
-            projectsBaseDir,
+            runtime,
             llm: ctx.llm,
           })
         } catch (error) {

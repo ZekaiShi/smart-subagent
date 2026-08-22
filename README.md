@@ -67,6 +67,42 @@ For a file named `code-reviewer.md`, call the registered tool with `agent_key: "
 
 Only the fenced front matter is routing metadata. The remaining Markdown content is not automatically appended to the child prompt; the tool call's `prompt` is the authoritative task sent to the subagent.
 
+## Built-in roles
+
+The plugin ships **official role templates** in `templates/` that work with zero
+configuration — no binding file needed. When an `agent_key` has no matching file
+in your binding directory, the plugin falls back to the bundled template of the
+same name, using its `provider`/`model` route and its role instructions.
+
+| agent_key | Role | Notes |
+| --- | --- | --- |
+| `code-reviewer` | Rigorous code review with severity-ranked findings | structured Markdown report |
+| `researcher` | Evidence-backed investigation with cited sources | facts vs. inferences, confidence |
+| `wps-worker` | Office-document producer via the Python trio | python-pptx / python-docx / openpyxl; **confirms before writing files** |
+
+Official roles are written with a `name(smart-subagent)` suffix — e.g.
+`code-reviewer(smart-subagent)` — to mark them as built-in and distinguish them
+from your own custom bindings. You can use the suffix anywhere the official
+source matters (docs, prompts, conversation); the plugin matches on the bare
+`agent_key` stem.
+
+To use a built-in role, pass an empty `prompt` (the role's own instructions are
+injected), or pass your own `prompt` to override them:
+
+```json
+{
+  "agent_key": "code-reviewer",
+  "description": "Review the change",
+  "prompt": "",
+  "run_in_background": false
+}
+```
+
+A template's `provider`/`model` must be registered in your DSH profile (the same
+validation as user bindings); an unregistered pair fails before any child starts.
+Override a built-in role by creating your own `<agent_key>.md` in the binding
+directory — your file wins over the template.
+
 ## Binding directory
 
 Set the binding directory before starting DSH. Relative paths resolve from the DSH launch working directory.

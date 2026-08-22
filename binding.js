@@ -46,6 +46,32 @@ export async function loadBinding(bindingsDir, agentKey) {
   return { ...parseBindingHeader(text, filename), filename }
 }
 
+/**
+ * Resolve an agent key to a built-in template. Mirrors loadBinding but reads
+ * from the plugin's own templates directory and also returns the role prompt
+ * (the body after the front matter) so the plugin can inject it into the
+ * child's task when the caller did not supply one.
+ *
+ * @param {string} templatesDir - absolute path to the bundled templates dir.
+ * @param {string} agentKey - validated routing key.
+ * @returns {Promise<{provider: string, model: string, filename: string, rolePrompt: string} | undefined>}
+ */
+export async function loadTemplate(templatesDir, agentKey) {
+  const key = assertAgentKey(agentKey)
+  const filename = resolve(templatesDir, `${key}.md`)
+  let text
+  try {
+    text = await readFile(filename, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined
+    throw new Error(`smart-subagent: failed to read built-in template ${filename}`, { cause: error })
+  }
+  const header = parseBindingHeader(text, filename)
+  // Body = everything after the 4-line front matter (--- / provider / model / ---).
+  const rolePrompt = text.replace(/^\uFEFF/, '').split(/\r?\n/).slice(4).join('\n').trim()
+  return { ...header, filename, rolePrompt }
+}
+
 export async function assertRegisteredModel(llm, binding) {
   const providers = llm.listProviders()
   if (!providers.some(entry => entry.id === binding.provider)) {

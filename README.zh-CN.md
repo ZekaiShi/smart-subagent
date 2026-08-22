@@ -21,20 +21,22 @@
 从 npm 安装到 DSH profile：
 
 ```sh
-dsh plugin --profile web add smart-subagent
+dsh plugin add smart-subagent
 ```
 
 从 GitHub 安装：
 
 ```sh
-dsh plugin --profile web add github:ZekaiShi/smart-subagent
+dsh plugin add github:ZekaiShi/smart-subagent
 ```
 
 本地开发安装：
 
 ```sh
-dsh plugin --profile web add ./smart-subagent
+dsh plugin add ./smart-subagent
 ```
+
+如需指定非默认 profile，追加 `--profile <名称>`。
 
 ## 绑定文件
 
@@ -65,19 +67,19 @@ model: deepseek-v4-flash
 
 ## 绑定目录
 
-启动 DSH 前设置绑定文件目录。相对路径从 DSH 启动工作目录解析。
+在启动 DSH 的同一进程环境中设置绑定文件目录。相对路径从 DSH 启动工作目录解析。
 
 PowerShell：
 
 ```powershell
-$env:SMART_SUBAGENT_BINDINGS_DIR = 'D:\agents'
-dsh --profile web
+$env:SMART_SUBAGENT_BINDINGS_DIR = 'C:\path\to\agents'
+dsh   # 或你平常启动 DSH 的方式（dsh web、桌面客户端等）
 ```
 
 Bash：
 
 ```sh
-SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh --profile web
+SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
 ```
 
 插件仍将 `DSH_AGENT_BINDINGS_DIR` 作为兼容回退变量。

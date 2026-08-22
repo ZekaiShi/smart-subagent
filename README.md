@@ -25,20 +25,22 @@ The plugin is role-agnostic. A binding can represent a code reviewer, test runne
 Install the published npm package into a DSH profile:
 
 ```sh
-dsh plugin --profile web add smart-subagent
+dsh plugin add smart-subagent
 ```
 
 Install directly from GitHub:
 
 ```sh
-dsh plugin --profile web add github:ZekaiShi/smart-subagent
+dsh plugin add github:ZekaiShi/smart-subagent
 ```
 
 For local development:
 
 ```sh
-dsh plugin --profile web add ./smart-subagent
+dsh plugin add ./smart-subagent
 ```
+
+Add `--profile <name>` to target a non-default profile.
 
 ## Binding files
 
@@ -105,19 +107,20 @@ directory — your file wins over the template.
 
 ## Binding directory
 
-Set the binding directory before starting DSH. Relative paths resolve from the DSH launch working directory.
+Set the binding directory before starting DSH, in the same process environment you
+launch DSH from. Relative paths resolve from the DSH launch working directory.
 
 PowerShell:
 
 ```powershell
-$env:SMART_SUBAGENT_BINDINGS_DIR = 'D:\agents'
-dsh --profile web
+$env:SMART_SUBAGENT_BINDINGS_DIR = 'C:\path\to\agents'
+dsh   # or however you normally start DSH (dsh web, desktop app, ...)
 ```
 
 Bash:
 
 ```sh
-SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh --profile web
+SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
 ```
 
 `DSH_AGENT_BINDINGS_DIR` remains available as a compatibility fallback.

@@ -1,7 +1,132 @@
 import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { assertAgentKey, assertRegisteredModel, loadBinding, loadTemplate } from './binding.js'
-import { readEvolution, buildInjection, parseEvolutionBlock, recordEvolution, defaultEvolutionDir } from './evolution.js'
+import {
+  readEvolution,
+  buildInjection,
+  parseEvolutionBlock,
+  recordEvolution,
+  defaultEvolutionDir,
+  detectAgents,
+  readEvolutionFilesRaw,
+  writeEvolutionFiles,
+} from './evolution.js'
+
+function loadRuntimeConfig(evolutionDir, fallback) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(evolutionDir, 'config.json'), 'utf8'))
+    return typeof parsed?.evolution === 'boolean' ? parsed.evolution : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function saveRuntimeConfig(evolutionDir, evolution) {
+  try {
+    writeFileSync(join(evolutionDir, 'config.json'), JSON.stringify({ evolution }, null, 2), 'utf8')
+  } catch (error) {
+    console.error(`[smart-subagent] failed to persist evolution config: ${error}`)
+  }
+}
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json' })
+  res.end(JSON.stringify(body))
+}
+
+async function readJsonBody(req) {
+  const chunks = []
+  for await (const chunk of req) chunks.push(chunk)
+  const text = Buffer.concat(chunks).toString('utf8')
+  return text ? JSON.parse(text) : {}
+}
+
+// Loopback HTTP surface for the settings card (browser half). Lives and dies
+// with the web profile; headless profiles never call this. Follows modlens:
+// the card talks to routes rather than a settings schema, because evolution
+// files live on disk and the toggle must be applied at runtime.
+function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionDir, state }) {
+  const error = (error) => ({ error: String(error?.message ?? error) })
+
+  webServer.register({
+    name: 'smart-subagent-agents',
+    kind: 'exact',
+    path: '/smart-subagent/agents',
+    handler: async (req, res) => {
+      try {
+        const agents = await detectAgents(bindingsDir, templatesDir)
+        sendJson(res, 200, { agents, evolution: state.evolution })
+      } catch (cause) {
+        sendJson(res, 500, error(cause))
+      }
+    },
+  })
+
+  webServer.register({
+    name: 'smart-subagent-evolution-read',
+    kind: 'exact',
+    path: '/smart-subagent/evolution/read',
+    handler: async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, error(new Error('use POST')))
+        return
+      }
+      try {
+        const body = await readJsonBody(req)
+        const files = await readEvolutionFilesRaw(evolutionDir, String(body.agentKey ?? ''))
+        sendJson(res, 200, files)
+      } catch (cause) {
+        sendJson(res, 500, error(cause))
+      }
+    },
+  })
+
+  webServer.register({
+    name: 'smart-subagent-evolution-save',
+    kind: 'exact',
+    path: '/smart-subagent/evolution/save',
+    handler: async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, error(new Error('use POST')))
+        return
+      }
+      try {
+        const body = await readJsonBody(req)
+        const key = assertAgentKey(String(body.agentKey ?? ''))
+        await writeEvolutionFiles(evolutionDir, key, {
+          ...(typeof body.prefercmd === 'string' ? { prefercmd: body.prefercmd } : {}),
+          ...(typeof body.memory === 'string' ? { memory: body.memory } : {}),
+        })
+        sendJson(res, 200, { ok: true })
+      } catch (cause) {
+        sendJson(res, 500, error(cause))
+      }
+    },
+  })
+
+  webServer.register({
+    name: 'smart-subagent-config',
+    kind: 'exact',
+    path: '/smart-subagent/config',
+    handler: async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, error(new Error('use POST')))
+        return
+      }
+      try {
+        const body = await readJsonBody(req)
+        if (typeof body.evolution === 'boolean') {
+          state.evolution = body.evolution
+          saveRuntimeConfig(evolutionDir, body.evolution)
+        }
+        sendJson(res, 200, { evolution: state.evolution })
+      } catch (cause) {
+        sendJson(res, 500, error(cause))
+      }
+    },
+  })
+}
 
 function nonEmpty(value, field) {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -75,8 +200,37 @@ export function createApply(defineTool) {
     if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) {
       throw new Error('smart-subagent: maxDepth must be a non-negative safe integer')
     }
-    const evolution = config.evolution !== false && process.env.SMART_SUBAGENT_EVOLUTION !== 'false'
     const evolutionDir = config.evolutionDir ? resolve(config.evolutionDir) : defaultEvolutionDir()
+    // Runtime state: `evolution` can be flipped by the settings card and
+    // persists to <evolutionDir>/config.json. A hard config/env disable still
+    // wins over the persisted toggle.
+    const hardDisabled = config.evolution === false || process.env.SMART_SUBAGENT_EVOLUTION === 'false'
+    const state = { evolution: hardDisabled ? false : loadRuntimeConfig(evolutionDir, true) }
+
+    // Browser-half surface. Optional: webServer exists only under the web
+    // profile, and settings only when the settings page can dispatch cards.
+    // Absent either, the plugin stays a pure host tool (headless profiles).
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['webServer'], (scope) => {
+        try {
+          registerEvolutionWeb(scope.webServer, { bindingsDir, templatesDir, evolutionDir, state })
+        } catch (error) {
+          console.error(`[smart-subagent] settings web routes skipped: ${error}`)
+        }
+      })
+      ctx.inject(['settings'], (scope) => {
+        try {
+          const passThrough = (value) => ({ ...(value ?? {}) })
+          passThrough.toJSON = () => ({
+            uid: 0,
+            refs: { 0: { type: 'object', meta: { default: {} }, dict: {} } },
+          })
+          scope.settings.register('smart-subagent', passThrough, { base: {} })
+        } catch (error) {
+          console.error(`[smart-subagent] settings namespace skipped: ${error}`)
+        }
+      })
+    }
 
     ctx.tools.register(defineTool({
       name: toolName,
@@ -143,7 +297,7 @@ export function createApply(defineTool) {
           // No user binding and no built-in template: preserve DSH's native
           // parent-model inheritance (no agentOptions, no error).
           const rawPrompt = nonEmpty(args.prompt ?? '', 'prompt')
-          const evolved = evolution
+          const evolved = state.evolution
             ? await loadAndInject(evolutionDir, agentKey, rawPrompt)
             : rawPrompt
           const request = {
@@ -162,7 +316,7 @@ export function createApply(defineTool) {
             return { kind: 'continuable', subagentId: started.childId }
           }
           const run = await ctx.subagents.start(provider, { ...request, signal: exec.signal })
-          return settleForegroundAndRecord(run, agentKey, { evolution, evolutionDir })
+          return settleForegroundAndRecord(run, agentKey, { evolution: state.evolution, evolutionDir })
         }
         const route = binding ?? template
         const agentOptions = await assertRegisteredModel(ctx.llm, route)
@@ -173,7 +327,7 @@ export function createApply(defineTool) {
         const basePrompt = (template !== undefined && prompt.trim() === '')
           ? template.rolePrompt
           : nonEmpty(prompt, 'prompt')
-        const effectivePrompt = evolution
+        const effectivePrompt = state.evolution
           ? await loadAndInject(evolutionDir, agentKey, basePrompt)
           : basePrompt
         const request = {
@@ -195,7 +349,7 @@ export function createApply(defineTool) {
         }
 
         const run = await ctx.subagents.start(provider, { ...request, signal: exec.signal })
-        return settleForegroundAndRecord(run, agentKey, { evolution, evolutionDir })
+        return settleForegroundAndRecord(run, agentKey, { evolution: state.evolution, evolutionDir })
       },
     }))
   }

@@ -11,6 +11,8 @@ import {
   recordEvolution,
   detectAgents,
   defaultEvolutionDir,
+  readEvolutionFilesRaw,
+  writeEvolutionFiles,
   MAX_PREFERCMD,
   MAX_MEMORY,
   MAX_INJECT_CHARS,
@@ -148,4 +150,33 @@ test('detectAgents merges bindings and templates, sorted', async () => {
 test('detectAgents returns empty for missing directories', async () => {
   const agents = await detectAgents('/no/such/dir', '/no/templates/either')
   assert.deepEqual(agents, [])
+})
+
+test('readEvolutionFilesRaw returns empty strings when absent', async () => {
+  const dir = await makeEvoDir()
+  const files = await readEvolutionFilesRaw(dir, 'none')
+  assert.equal(files.prefercmd, '')
+  assert.equal(files.memory, '')
+})
+
+test('writeEvolutionFiles + readEvolutionFilesRaw round-trips raw markdown', async () => {
+  const dir = await makeEvoDir()
+  const prefercmd = '# prefercmd\n\n- pnpm test\n- node --test\n'
+  const memory = '# memory\n\n- 不要用 --force\n'
+  await writeEvolutionFiles(dir, 'my-agent', { prefercmd, memory })
+  const files = await readEvolutionFilesRaw(dir, 'my-agent')
+  assert.equal(files.prefercmd, prefercmd)
+  assert.equal(files.memory, memory)
+})
+
+test('writeEvolutionFiles writes only provided files and keeps the other', async () => {
+  const dir = await makeEvoDir()
+  await writeEvolutionFiles(dir, 'partial', { prefercmd: '- only cmd\n' })
+  let files = await readEvolutionFilesRaw(dir, 'partial')
+  assert.equal(files.prefercmd, '- only cmd\n')
+  assert.equal(files.memory, '')
+  await writeEvolutionFiles(dir, 'partial', { memory: '- only note\n' })
+  files = await readEvolutionFilesRaw(dir, 'partial')
+  assert.equal(files.prefercmd, '- only cmd\n')
+  assert.equal(files.memory, '- only note\n')
 })

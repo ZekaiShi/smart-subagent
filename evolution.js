@@ -146,6 +146,51 @@ export async function recordEvolution(evolutionDir, agentKey, updates) {
   }
 }
 
+async function readRawFile(filename) {
+  try {
+    return await readFile(filename, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') return ''
+    throw new Error(`smart-subagent: failed to read ${filename}`, { cause: error })
+  }
+}
+
+/**
+ * Read the raw markdown text of both evolution files ('' when absent).
+ * Used by the settings UI editor.
+ *
+ * @returns {Promise<{ agentKey: string, prefercmd: string, memory: string }>}
+ */
+export async function readEvolutionFilesRaw(evolutionDir, agentKey) {
+  const dir = agentKeyDir(evolutionDir, agentKey)
+  const [prefercmd, memory] = await Promise.all([
+    readRawFile(join(dir, 'prefercmd.md')),
+    readRawFile(join(dir, 'memory.md')),
+  ])
+  return { agentKey, prefercmd, memory }
+}
+
+/**
+ * Overwrite both evolution files with raw markdown text (empty string writes
+ * an empty file). The settings UI editor saves through this.
+ *
+ * @param {string} evolutionDir
+ * @param {string} agentKey
+ * @param {{ prefercmd?: string, memory?: string }} files
+ */
+export async function writeEvolutionFiles(evolutionDir, agentKey, files) {
+  const dir = agentKeyDir(evolutionDir, agentKey)
+  await mkdir(dir, { recursive: true })
+  const writes = []
+  if (typeof files?.prefercmd === 'string') {
+    writes.push(writeFile(join(dir, 'prefercmd.md'), files.prefercmd, 'utf8'))
+  }
+  if (typeof files?.memory === 'string') {
+    writes.push(writeFile(join(dir, 'memory.md'), files.memory, 'utf8'))
+  }
+  await Promise.all(writes)
+}
+
 /**
  * Detect available agent keys across the bindings directory and the bundled
  * templates. Returns sorted list with `agentKey` and `source` (binding / template / both).

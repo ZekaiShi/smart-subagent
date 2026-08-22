@@ -7,6 +7,7 @@
   "exports": {
     ".": "./index.js",
     "./binding": "./binding.js",
+    "./client": "./dsh/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -16,6 +17,7 @@
     "evolution.js",
     "cordis.patch.yml",
     "templates",
+    "dsh",
     "README.md",
     "README.zh-CN.md",
     "LICENSE"
@@ -53,6 +55,11 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web",
+      "immediately": true
     }
   },
   "engines": {

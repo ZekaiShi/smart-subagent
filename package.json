@@ -1,0 +1,50 @@
+{
+  "name": "dsh-agent-model-binding",
+  "version": "0.1.0",
+  "description": "Route fresh DeepSeek Harness subagents to registered provider/model pairs declared in role Markdown files",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./binding": "./binding.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "plugin.js",
+    "binding.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test --test-isolation=none",
+    "check": "node --check index.js && node --check plugin.js && node --check binding.js",
+    "prepack": "npm run check && npm test"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "subagent",
+    "model-routing"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-subagent": "^0.1.1-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.1-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,8 @@
+- insert:
+    - id: agent-model-binding
+      name: dsh-agent-model-binding
+      config:
+        bindingsDir: !!js process.env.DSH_AGENT_BINDINGS_DIR || 'agents'
+        provider: spawn
+        toolName: agent_subagent
+        maxDepth: 3

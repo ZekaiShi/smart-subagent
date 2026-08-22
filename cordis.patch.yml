@@ -1,8 +1,8 @@
 - insert:
-    - id: agent-model-binding
-      name: dsh-agent-model-binding
+    - id: smart-subagent
+      name: smart-subagent
       config:
-        bindingsDir: !!js process.env.DSH_AGENT_BINDINGS_DIR || 'agents'
+        bindingsDir: !!js process.env.SMART_SUBAGENT_BINDINGS_DIR || process.env.DSH_AGENT_BINDINGS_DIR || 'agents'
         provider: spawn
-        toolName: agent_subagent
+        toolName: smart_subagent
         maxDepth: 3

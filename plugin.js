@@ -3,7 +3,7 @@ import { assertAgentKey, assertRegisteredModel, loadBinding } from './binding.js
 
 function nonEmpty(value, field) {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`agent-model-binding: ${field} must be a non-empty string`)
+    throw new Error(`smart-subagent: ${field} must be a non-empty string`)
   }
   return value
 }
@@ -32,12 +32,12 @@ async function settleForeground(run) {
   try {
     await run.dispose()
   } catch (error) {
-    throw new Error('agent-model-binding: subagent disposal failed', { cause: error })
+    throw new Error('smart-subagent: subagent disposal failed', { cause: error })
   }
   if (execution.stopReason !== 'completed') {
     const partial = partialText(execution.output)
     throw new Error(
-      `agent-model-binding: subagent stopped with ${execution.stopReason}`
+      `smart-subagent: subagent stopped with ${execution.stopReason}`
       + (partial.length === 0 ? '' : `\nPartial output before the run ended:\n${partial}`),
     )
   }
@@ -48,10 +48,10 @@ export function createApply(defineTool) {
   return function apply(ctx, config = {}) {
     const bindingsDir = resolve(config.bindingsDir ?? process.env.DSH_AGENT_BINDINGS_DIR ?? 'agents')
     const provider = config.provider ?? 'spawn'
-    const toolName = config.toolName ?? 'agent_subagent'
+    const toolName = config.toolName ?? 'smart_subagent'
     const maxDepth = config.maxDepth ?? 3
     if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) {
-      throw new Error('agent-model-binding: maxDepth must be a non-negative safe integer')
+      throw new Error('smart-subagent: maxDepth must be a non-negative safe integer')
     }
 
     ctx.tools.register(defineTool({
@@ -107,7 +107,7 @@ export function createApply(defineTool) {
       isConcurrencySafe: () => true,
       async execute(args, exec) {
         const parent = exec.agent
-        if (parent === undefined) throw new Error('agent-model-binding: an initiating agent is required')
+        if (parent === undefined) throw new Error('smart-subagent: an initiating agent is required')
         const agentKey = assertAgentKey(args.agent_key)
         const description = nonEmpty(args.description, 'description')
         const prompt = nonEmpty(args.prompt, 'prompt')

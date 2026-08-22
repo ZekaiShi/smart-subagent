@@ -1,4 +1,4 @@
-# dsh-agent-model-binding
+# smart-subagent
 
 一个用于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的轻量插件：根据稳定的 `agent_key`，将新建 subagent 严格路由到 DSH 中已经注册的 `provider/model` 组合。
 
@@ -24,13 +24,13 @@
 从 GitHub 安装到 DSH 的 web profile：
 
 ```sh
-dsh plugin --profile web add github:ZekaiShi/dsh-agent-model-binding
+dsh plugin --profile web add github:ZekaiShi/smart-subagent
 ```
 
 本地开发安装：
 
 ```sh
-dsh plugin --profile web add ./dsh-agent-model-binding
+dsh plugin --profile web add ./smart-subagent
 ```
 
 ## 角色文件
@@ -64,28 +64,28 @@ Markdown 中第一、二行之后的正文不会自动加入 subagent prompt；�
 PowerShell：
 
 ```powershell
-$env:DSH_AGENT_BINDINGS_DIR = 'D:\agents'
+$env:SMART_SUBAGENT_BINDINGS_DIR = 'D:\agents'
 dsh --profile web
 ```
 
 Bash：
 
 ```sh
-DSH_AGENT_BINDINGS_DIR=/absolute/path/to/agents dsh --profile web
+SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh --profile web
 ```
 
-插件默认注册工具名 `agent_subagent`。后台运行是默认行为；传入 `run_in_background: false` 可等待一次性执行结果。
+插件默认注册工具名 `smart_subagent`。后台运行是默认行为；传入 `run_in_background: false` 可等待一次性执行结果。
 
 ## Bundle 配置
 
 插件安装的默认配置如下：
 
 ```yaml
-- id: agent-model-binding
+- id: smart-subagent
   config:
     bindingsDir: /absolute/path/to/agents
     provider: spawn
-    toolName: agent_subagent
+    toolName: smart_subagent
     maxDepth: 3
 ```
 
@@ -99,7 +99,7 @@ DSH patch 覆盖会替换完整的 `config`，自行覆盖时请保留仍然需�
 - model 必须存在于对应 provider 的 `ctx.llm.listModels(provider)`。
 - 无效绑定不会回退到其他 provider 或 model。
 - 缺少绑定文件时，子代理沿用 DSH 官方继承语义。
-- 禁用或卸载本插件只会移除 `agent_subagent`，不会修改官方 `subagent` 工具。
+- 禁用或卸载本插件只会移除 `smart_subagent`，不会修改官方 `subagent` 工具。
 
 ## 开发与验证
 

@@ -1,5 +1,5 @@
 {
-  "name": "dsh-agent-model-binding",
+  "name": "smart-subagent",
   "version": "0.1.0",
   "description": "Route fresh DeepSeek Harness subagents to registered provider/model pairs declared in role Markdown files",
   "type": "module",
@@ -32,11 +32,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ZekaiShi/dsh-agent-model-binding.git"
+    "url": "git+https://github.com/ZekaiShi/smart-subagent.git"
   },
-  "homepage": "https://github.com/ZekaiShi/dsh-agent-model-binding#readme",
+  "homepage": "https://github.com/ZekaiShi/smart-subagent#readme",
   "bugs": {
-    "url": "https://github.com/ZekaiShi/dsh-agent-model-binding/issues"
+    "url": "https://github.com/ZekaiShi/smart-subagent/issues"
   },
   "publishConfig": {
     "access": "public"

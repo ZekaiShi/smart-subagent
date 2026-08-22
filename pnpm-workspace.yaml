@@ -1,0 +1,9 @@
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': false
+  '@google/genai': false
+  koffi: false
+  node-pty: false
+  protobufjs: false
+confirmModulesPurge: false
+minimumReleaseAge: 0
+minimumReleaseAgeStrict: false

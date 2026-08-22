@@ -113,9 +113,14 @@ shortening the rediscovery loop.
 
 - **Default: on.** Disable with `evolution: false` in the plugin config or the
   `SMART_SUBAGENT_EVOLUTION=false` environment variable.
-- Files live in the hidden user directory
-  `~/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` and `memory.md` —
-  they never appear in your project's `agents/` folder.
+- **Project-scoped by default.** Evolution files live under the DSH launch
+  working directory:
+  `<project>/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` and
+  `memory.md` — the same base the `agents/` bindings directory resolves from,
+  so each project/conversation keeps its own evolution state with no
+  cross-project contamination. Override per project with
+  `SMART_SUBAGENT_EVOLUTION_DIR` (absolute path) or `evolutionDir`. The files
+  never appear in your project's `agents/` folder.
 - On each foreground run the plugin injects the two files as a bounded context
   block (capped at ~2000 tokens) into the child prompt, so the subagent starts
   from proven commands instead of re-deriving them.

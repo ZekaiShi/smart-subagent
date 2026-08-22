@@ -18,6 +18,9 @@ window.__ModuleLoader__.load({
     var EN = {
       title: 'smart-subagent',
       subtitle: 'Evolution mode · per-agent prefercmd / memory',
+      scope: 'Managing project',
+      scopeBindings: 'Bindings',
+      scopeEvolution: 'Evolution',
       toggle: 'Evolution mode',
       toggleHint: 'Inject learned commands & lessons into foreground runs',
       agents: 'Detected subagents',
@@ -39,6 +42,9 @@ window.__ModuleLoader__.load({
     var ZH = {
       title: 'smart-subagent',
       subtitle: '进化模式 · 每个 agent 的 prefercmd / memory',
+      scope: '当前管理的项目',
+      scopeBindings: '绑定目录',
+      scopeEvolution: '进化目录',
       toggle: '进化模式',
       toggleHint: '把学到的命令与经验注入前台运行的子代理',
       agents: '检测到的 subagents',
@@ -402,6 +408,42 @@ window.__ModuleLoader__.load({
             body = h(
               'div',
               null,
+              summary.scope
+                ? h(
+                    'div',
+                    {
+                      style: {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        padding: '10px 0',
+                        borderBottom: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
+                        fontSize: '12px',
+                      },
+                    },
+                    h(
+                      'div',
+                      { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                      h('span', { style: { fontWeight: 600 } }, t.scope),
+                      h(
+                        'span',
+                        {
+                          style: {
+                            padding: '1px 8px',
+                            borderRadius: '999px',
+                            border: '1px solid var(--dsw-alias-border-l2, rgba(127,127,127,0.35))',
+                            color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                          },
+                        },
+                        summary.scope.projectName || '',
+                      ),
+                    ),
+                    h('div', { style: { color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))' } },
+                      t.scopeBindings + ': ' + (summary.scope.bindingsDir || '')),
+                    h('div', { style: { color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))' } },
+                      t.scopeEvolution + ': ' + (summary.scope.evolutionDir || '')),
+                  )
+                : null,
               h(
                 'label',
                 {

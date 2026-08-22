@@ -46,7 +46,7 @@ async function readJsonBody(req) {
 // with the web profile; headless profiles never call this. Follows modlens:
 // the card talks to routes rather than a settings schema, because evolution
 // files live on disk and the toggle must be applied at runtime.
-function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionDir, state }) {
+function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionDir, state, scope }) {
   const error = (error) => ({ error: String(error?.message ?? error) })
 
   webServer.register({
@@ -56,7 +56,7 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
     handler: async (req, res) => {
       try {
         const agents = await detectAgents(bindingsDir, templatesDir)
-        sendJson(res, 200, { agents, evolution: state.evolution })
+        sendJson(res, 200, { agents, evolution: state.evolution, scope })
       } catch (cause) {
         sendJson(res, 500, error(cause))
       }
@@ -192,7 +192,9 @@ async function settleForegroundAndRecord(run, agentKey, { evolution, evolutionDi
 
 export function createApply(defineTool) {
   return function apply(ctx, config = {}) {
-    const bindingsDir = resolve(config.bindingsDir ?? process.env.DSH_AGENT_BINDINGS_DIR ?? 'agents')
+    const bindingsDir = resolve(
+      config.bindingsDir ?? process.env.SMART_SUBAGENT_BINDINGS_DIR ?? process.env.DSH_AGENT_BINDINGS_DIR ?? 'agents',
+    )
     const templatesDir = resolve(config.templatesDir ?? fileURLToPath(new URL('./templates/', import.meta.url)))
     const provider = config.provider ?? 'spawn'
     const toolName = config.toolName ?? 'smart_subagent'
@@ -200,7 +202,21 @@ export function createApply(defineTool) {
     if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) {
       throw new Error('smart-subagent: maxDepth must be a non-negative safe integer')
     }
-    const evolutionDir = config.evolutionDir ? resolve(config.evolutionDir) : defaultEvolutionDir()
+    const evolutionDir = config.evolutionDir
+      ? resolve(config.evolutionDir)
+      : (process.env.SMART_SUBAGENT_EVOLUTION_DIR
+        ? resolve(process.env.SMART_SUBAGENT_EVOLUTION_DIR)
+        : defaultEvolutionDir())
+    // The scope shown in the settings card: which project/conversation this
+    // instance manages, so per-project subagent + evolution management is
+    // unambiguous when the same profile serves multiple projects.
+    const cwd = process.cwd()
+    const scope = Object.freeze({
+      cwd,
+      projectName: cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd,
+      bindingsDir,
+      evolutionDir,
+    })
     // Runtime state: `evolution` can be flipped by the settings card and
     // persists to <evolutionDir>/config.json. A hard config/env disable still
     // wins over the persisted toggle.
@@ -211,21 +227,21 @@ export function createApply(defineTool) {
     // profile, and settings only when the settings page can dispatch cards.
     // Absent either, the plugin stays a pure host tool (headless profiles).
     if (typeof ctx.inject === 'function') {
-      ctx.inject(['webServer'], (scope) => {
+      ctx.inject(['webServer'], (browser) => {
         try {
-          registerEvolutionWeb(scope.webServer, { bindingsDir, templatesDir, evolutionDir, state })
+          registerEvolutionWeb(browser.webServer, { bindingsDir, templatesDir, evolutionDir, state, scope })
         } catch (error) {
           console.error(`[smart-subagent] settings web routes skipped: ${error}`)
         }
       })
-      ctx.inject(['settings'], (scope) => {
+      ctx.inject(['settings'], (service) => {
         try {
           const passThrough = (value) => ({ ...(value ?? {}) })
           passThrough.toJSON = () => ({
             uid: 0,
             refs: { 0: { type: 'object', meta: { default: {} }, dict: {} } },
           })
-          scope.settings.register('smart-subagent', passThrough, { base: {} })
+          service.settings.register('smart-subagent', passThrough, { base: {} })
         } catch (error) {
           console.error(`[smart-subagent] settings namespace skipped: ${error}`)
         }

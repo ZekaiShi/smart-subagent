@@ -23,8 +23,10 @@ import {
 const here = dirname(fileURLToPath(import.meta.url))
 const templatesDir = join(here, '..', 'templates')
 
-test('defaultEvolutionDir returns a path under ~/.dsh/smart-subagent/evolution', () => {
+test('defaultEvolutionDir is project-scoped under <cwd>/.dsh/smart-subagent/evolution', () => {
   const d = defaultEvolutionDir()
+  // Relative to the launch working directory, so each project is isolated.
+  assert.equal(d.startsWith(process.cwd()), true)
   assert.match(d, /\.dsh[/\\]smart-subagent[/\\]evolution$/)
 })
 

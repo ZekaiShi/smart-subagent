@@ -1,5 +1,4 @@
 import { readdir, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { assertAgentKey } from './binding.js'
 
@@ -9,9 +8,12 @@ export const MAX_PREFERCMD = 40
 export const MAX_MEMORY = 25
 export const MAX_INJECT_CHARS = 6000
 
-/** Default user-level hidden directory for evolution files. */
+/** Default project-scoped evolution directory, derived from the DSH launch
+ * working directory (the same base the bindings directory resolves from).
+ * Each project/conversation keeps its own evolution files, isolated from the
+ * others. Override with SMART_SUBAGENT_EVOLUTION_DIR or `evolutionDir`. */
 export function defaultEvolutionDir() {
-  return join(homedir(), '.dsh', 'smart-subagent', 'evolution')
+  return join(process.cwd(), '.dsh', 'smart-subagent', 'evolution')
 }
 
 function agentKeyDir(evolutionDir, agentKey) {

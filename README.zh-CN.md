@@ -70,9 +70,11 @@ model: deepseek-v4-flash
 插件会为每个 agent 自动维护 `prefercmd`（已验证命令）和 `memory`（经验教训）两个文件，通过不断积累减少重复试错，降低 token 浪费。
 
 - **默认开启**。可通过配置 `evolution: false` 或环境变量 `SMART_SUBAGENT_EVOLUTION=false` 关闭。
-- 文件位于用户隐藏目录
-  `~/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` 和
-  `memory.md`——**不会出现在你项目的 `agents/` 文件夹里**。
+- **默认按项目隔离**。进化文件位于 DSH 启动工作目录下：
+  `<项目>/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` 和
+  `memory.md`——与 `agents/` 绑定目录同一基准，每个项目/对话独立进化、互不污染。
+  可按项目用 `SMART_SUBAGENT_EVOLUTION_DIR`（绝对路径）或 `evolutionDir` 覆盖。
+  文件**不会出现在你项目的 `agents/` 文件夹里**。
 - 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限约 2000 token），让 subagent 直接从已验证的命令出发，不用重新摸索。
 - 前台运行结束后，插件会在最终输出中查找 `[[EVOLUTION]]` 块并合并新记录：
 

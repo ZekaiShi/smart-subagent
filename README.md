@@ -13,7 +13,7 @@ The plugin is role-agnostic. A binding can represent a code reviewer, test runne
 ## Features
 
 - Maps each `agent_key` to a same-named Markdown binding file.
-- Reads strict `provider` and `model` metadata from the first two physical lines.
+- Reads strict `provider` and `model` metadata from a fenced front matter block.
 - Validates the exact provider/model pair against the live DSH model registry before spawning.
 - Supports foreground one-shot runs and continuable background subagents.
 - Preserves DSH's native parent-model inheritance when no binding file exists.
@@ -42,11 +42,13 @@ dsh plugin --profile web add ./smart-subagent
 
 ## Binding files
 
-The filename stem is the `agent_key`. The first two physical lines must contain only the registered provider and model identifiers:
+The filename stem is the `agent_key`. Every binding starts with a strict four-line front matter block. The opening and closing fences must be exactly `---`, with no blank lines inside:
 
 ```md
+---
 provider: deepseek-official
 model: deepseek-v4-flash
+---
 
 # Code reviewer
 Optional notes for people or external tooling may follow this header.
@@ -63,7 +65,7 @@ For a file named `code-reviewer.md`, call the registered tool with `agent_key: "
 }
 ```
 
-Only the first two lines are routing metadata. The remaining Markdown content is not automatically appended to the child prompt; the tool call's `prompt` is the authoritative task sent to the subagent.
+Only the fenced front matter is routing metadata. The remaining Markdown content is not automatically appended to the child prompt; the tool call's `prompt` is the authoritative task sent to the subagent.
 
 ## Binding directory
 
@@ -98,7 +100,7 @@ The plugin registers `smart_subagent` by default.
 ## Routing behavior
 
 1. Validate the `agent_key` syntax and resolve its Markdown file safely.
-2. Parse the exact first-line `provider` and second-line `model` values.
+2. Parse the fenced `provider` and `model` values in their fixed order.
 3. Confirm that the provider exists in `ctx.llm.listProviders()`.
 4. Confirm that the model exists in `ctx.llm.listModels(provider)`.
 5. Start a fresh child through the configured DSH subagent provider.
@@ -146,7 +148,7 @@ pnpm run check
 npm pack --dry-run
 ```
 
-The test suite covers strict header parsing, path safety, model registration checks, parent-route inheritance, and foreground/background child creation.
+The test suite covers strict front matter parsing, path safety, model registration checks, parent-route inheritance, and foreground/background child creation.
 
 ## License
 

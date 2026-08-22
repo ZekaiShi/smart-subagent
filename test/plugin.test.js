@@ -41,7 +41,7 @@ async function harness(files = {}) {
 const exec = { agent: { options: { provider: 'parent-provider', model: 'parent-model' } }, signal: new AbortController().signal }
 
 test('a valid binding injects only its registered provider/model route', async () => {
-  const h = await harness({ writer: 'provider: registered-provider\nmodel: registered-model\n' })
+  const h = await harness({ writer: '---\nprovider: registered-provider\nmodel: registered-model\n---\n' })
   const result = await h.definition.execute({
     agent_key: 'writer', description: 'write', prompt: 'draft', run_in_background: false,
   }, exec)
@@ -63,7 +63,7 @@ test('a missing binding omits agentOptions so official spawn inherits the parent
 })
 
 test('an invalid model fails before any spawn provider is called', async () => {
-  const h = await harness({ writer: 'provider: registered-provider\nmodel: missing-model\n' })
+  const h = await harness({ writer: '---\nprovider: registered-provider\nmodel: missing-model\n---\n' })
   await assert.rejects(h.definition.execute({
     agent_key: 'writer', description: 'write', prompt: 'draft', run_in_background: false,
   }, exec), /model "missing-model" is not registered/)

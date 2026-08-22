@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const AGENT_KEY = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+const FRONT_MATTER_DELIMITER = '---'
 const PROVIDER_LINE = /^provider:[ \t]*([^\s]+)[ \t]*$/
 const MODEL_LINE = /^model:[ \t]*([^\s]+)[ \t]*$/
 
@@ -14,14 +15,20 @@ export function assertAgentKey(agentKey) {
 
 export function parseBindingHeader(text, filename = '<binding>') {
   if (typeof text !== 'string') throw new TypeError('smart-subagent: binding content must be text')
-  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/, 3)
-  const provider = PROVIDER_LINE.exec(lines[0] ?? '')?.[1]
-  const model = MODEL_LINE.exec(lines[1] ?? '')?.[1]
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/, 5)
+  if (lines[0] !== FRONT_MATTER_DELIMITER) {
+    throw new Error(`${filename}: line 1 must be exactly "---"`)
+  }
+  const provider = PROVIDER_LINE.exec(lines[1] ?? '')?.[1]
+  const model = MODEL_LINE.exec(lines[2] ?? '')?.[1]
   if (provider === undefined) {
-    throw new Error(`${filename}: line 1 must be exactly "provider: <registered-provider-id>"`)
+    throw new Error(`${filename}: line 2 must be exactly "provider: <registered-provider-id>"`)
   }
   if (model === undefined) {
-    throw new Error(`${filename}: line 2 must be exactly "model: <registered-model-id>"`)
+    throw new Error(`${filename}: line 3 must be exactly "model: <registered-model-id>"`)
+  }
+  if (lines[3] !== FRONT_MATTER_DELIMITER) {
+    throw new Error(`${filename}: line 4 must be exactly "---"`)
   }
   return Object.freeze({ provider, model })
 }

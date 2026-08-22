@@ -5,24 +5,26 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { assertAgentKey, assertRegisteredModel, loadBinding, parseBindingHeader } from '../binding.js'
 
-test('parses the exact first two physical lines', () => {
+test('parses strict fenced front matter', () => {
   assert.deepEqual(
-    parseBindingHeader('provider: deepseek-official\r\nmodel: deepseek-v4\r\n\r\n# Writer', 'writer.md'),
+    parseBindingHeader('---\r\nprovider: deepseek-official\r\nmodel: deepseek-v4\r\n---\r\n# Reviewer', 'reviewer.md'),
     { provider: 'deepseek-official', model: 'deepseek-v4' },
   )
 })
 
-test('accepts a UTF-8 BOM only before the first key', () => {
-  assert.deepEqual(parseBindingHeader('\uFEFFprovider: openai\nmodel: gpt-5\n'), {
+test('accepts a UTF-8 BOM only before the opening fence', () => {
+  assert.deepEqual(parseBindingHeader('\uFEFF---\nprovider: openai\nmodel: gpt-5\n---\n'), {
     provider: 'openai',
     model: 'gpt-5',
   })
 })
 
 test('rejects reordered, blank, or malformed headers', () => {
-  assert.throws(() => parseBindingHeader('model: m\nprovider: p\n', 'bad.md'), /bad\.md: line 1/)
-  assert.throws(() => parseBindingHeader('\nprovider: p\nmodel: m\n', 'blank.md'), /blank\.md: line 1/)
-  assert.throws(() => parseBindingHeader('provider: p extra\nmodel: m\n', 'space.md'), /space\.md: line 1/)
+  assert.throws(() => parseBindingHeader('provider: p\nmodel: m\n', 'unfenced.md'), /unfenced\.md: line 1/)
+  assert.throws(() => parseBindingHeader('---\nmodel: m\nprovider: p\n---\n', 'bad.md'), /bad\.md: line 2/)
+  assert.throws(() => parseBindingHeader('---\n\nmodel: m\n---\n', 'blank.md'), /blank\.md: line 2/)
+  assert.throws(() => parseBindingHeader('---\nprovider: p extra\nmodel: m\n---\n', 'space.md'), /space\.md: line 2/)
+  assert.throws(() => parseBindingHeader('---\nprovider: p\nmodel: m\n', 'open.md'), /open\.md: line 4/)
 })
 
 test('rejects path traversal and unstable agent keys', () => {
@@ -35,7 +37,7 @@ test('rejects path traversal and unstable agent keys', () => {
 test('missing binding means inherit parent; an existing file resolves exactly', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'smart-subagent-'))
   assert.equal(await loadBinding(dir, 'missing'), undefined)
-  await writeFile(join(dir, 'chapter-writer.md'), 'provider: p\nmodel: m\n\nrole text', 'utf8')
+  await writeFile(join(dir, 'chapter-writer.md'), '---\nprovider: p\nmodel: m\n---\nrole text', 'utf8')
   const binding = await loadBinding(dir, 'chapter-writer')
   assert.equal(binding.provider, 'p')
   assert.equal(binding.model, 'm')

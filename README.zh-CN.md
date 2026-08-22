@@ -9,7 +9,7 @@
 ## 功能特点
 
 - 一个 `agent_key` 对应一个同名 Markdown 绑定文件。
-- 严格读取文件前两个物理行中的 `provider` 和 `model`。
+- 严格读取由 `---` 包裹的 front matter 中的 `provider` 和 `model`。
 - 创建子代理前，根据 DSH 实时模型注册表验证精确的 provider/model 组合。
 - 支持前台一次性执行和可持续的后台 subagent。
 - 找不到绑定文件时，保留 DSH 官方的父模型继承行为。
@@ -38,11 +38,13 @@ dsh plugin --profile web add ./smart-subagent
 
 ## 绑定文件
 
-文件名（不含 `.md` 扩展名）就是 `agent_key`。前两个物理行只能包含已注册的 provider 和 model 标识：
+文件名（不含 `.md` 扩展名）就是 `agent_key`。每个绑定文件必须以严格的四行 front matter 开头。首尾分隔符必须为 `---`，内部不能插入空行：
 
 ```md
+---
 provider: deepseek-official
 model: deepseek-v4-flash
+---
 
 # 代码审查代理
 这里可以保存供人员或外部工具阅读的补充说明。
@@ -59,7 +61,7 @@ model: deepseek-v4-flash
 }
 ```
 
-只有前两行属于路由元数据。后续 Markdown 正文不会自动加入子代理提示词；工具调用中的 `prompt` 才是发送给 subagent 的权威任务内容。
+只有 front matter 属于路由元数据。后续 Markdown 正文不会自动加入子代理提示词；工具调用中的 `prompt` 才是发送给 subagent 的权威任务内容。
 
 ## 绑定目录
 
@@ -94,7 +96,7 @@ SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh --profile web
 ## 路由流程
 
 1. 验证 `agent_key` 格式并安全解析 Markdown 文件路径。
-2. 解析第一行 `provider` 和第二行 `model`。
+2. 按固定顺序解析 front matter 中的 `provider` 和 `model`。
 3. 确认 provider 存在于 `ctx.llm.listProviders()`。
 4. 确认 model 存在于 `ctx.llm.listModels(provider)`。
 5. 通过配置的 DSH subagent provider 创建全新子代理。
@@ -142,7 +144,7 @@ pnpm run check
 npm pack --dry-run
 ```
 
-测试覆盖严格头部解析、路径安全、注册模型验证、父模型继承以及前后台子代理创建。
+测试覆盖严格 front matter 解析、路径安全、注册模型验证、父模型继承以及前后台子代理创建。
 
 ## 许可证
 

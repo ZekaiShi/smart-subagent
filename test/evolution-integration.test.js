@@ -161,3 +161,35 @@ memory:
   const { memory } = await readEvolution(h.evolutionDir, 'custom-worker')
   assert.deepEqual(memory, ['inherited agent can use pnpm'])
 })
+
+test('settings route /smart-subagent/agents returns project scope', async () => {
+  const bindingsDir = await mkdtemp(join(tmpdir(), 'smart-sub-scope-bind-'))
+  const evolutionDir = await mkdtemp(join(tmpdir(), 'smart-sub-scope-evo-'))
+  const routes = new Map()
+  const webServer = {
+    register(route) { routes.set(route.path, route) },
+  }
+  const settings = { register() {} }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => cb({ webServer, settings }),
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir, templatesDir, evolution: true, evolutionDir, maxDepth: 3,
+  })
+  const route = routes.get('/smart-subagent/agents')
+  assert.ok(route, 'agents route registered')
+  let captured
+  const res = {
+    writeHead(status, headers) { this.status = status; this.headers = headers },
+    end(body) { captured = JSON.parse(body) },
+  }
+  await route.handler({}, res)
+  assert.equal(res.status, 200)
+  assert.ok(captured.scope, 'scope present in response')
+  assert.equal(captured.scope.bindingsDir, bindingsDir)
+  assert.equal(captured.scope.evolutionDir, evolutionDir)
+  assert.equal(typeof captured.scope.projectName, 'string')
+  assert.ok(captured.scope.projectName.length > 0)
+  assert.equal(captured.scope.cwd, process.cwd())
+})

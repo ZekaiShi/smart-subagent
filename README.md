@@ -6,15 +6,26 @@
 [![license](https://img.shields.io/npm/l/smart-subagent.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
 
-`smart-subagent` is a lightweight plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It maps a stable `agent_key` to an exact provider/model pair already registered in DSH, allowing different subagent roles to use predictable model routes without duplicating credentials or provider configuration.
+`smart-subagent` is a lightweight plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It pulls together three capabilities that today live scattered across separate plugins — **role-based subagent routing**, **per-agent evolution** (verified commands + lessons), and **a knowledge allow/deny list** — so repeated tasks start from what already works instead of rediscovering it: fewer retries, fewer re-debugged bugs, fewer tokens.
 
-The plugin is role-agnostic. A binding can represent a code reviewer, test runner, researcher, planner, verifier, data analyst, or any other specialized subagent.
+### Routing
+
+Each stable `agent_key` maps to a same-named Markdown binding file declaring an exact `provider`/`model` pair already registered in DSH. Different subagent roles (code reviewer, test runner, researcher, planner, verifier, data analyst, ...) can therefore use predictable model routes without duplicating credentials or maintaining a second provider config. The pair is validated against the live DSH model registry before any child spawns.
+
+### Evolution (knowledge allow/deny)
+
+The plugin continuously maintains `prefercmd` (verified commands) and `memory` (lessons learned) per agent and per workspace. Think of `prefercmd` as a **whitelist** — the subagent starts from commands proven to work instead of re-deriving them — and `memory` as a **blacklist** — mistakes are recorded so they are not made, or debugged, again. Together they stop repeated runs from wasting tokens on rediscovery and re-debugging.
+
+### Zero-config, project-scoped
+
+Bindings and evolution are isolated per project workspace (`.smart_subagent/` under the nearest folder owning an `agents/` directory), with official built-in role templates that work out of the box. Nothing depends on where DSH was launched, and the plugin stores no API keys, endpoints, credentials, or provider definitions.
 
 ## Features
 
 - Maps each `agent_key` to a same-named Markdown binding file.
 - Reads strict `provider` and `model` metadata from a fenced front matter block.
 - Validates the exact provider/model pair against the live DSH model registry before spawning.
+- Auto-maintains per-agent / per-workspace `prefercmd` + `memory` evolution files (whitelist + blacklist of knowledge), injected into each foreground run.
 - Supports foreground one-shot runs and continuable background subagents.
 - Preserves DSH's native parent-model inheritance when no binding file exists.
 - Stores no API keys, endpoints, credentials, or provider definitions.
@@ -109,7 +120,9 @@ directory — your file wins over the template.
 
 The plugin continuously refines per-agent `prefercmd` (verified commands) and
 `memory` (lessons learned) files to reduce token waste on repeated runs by
-shortening the rediscovery loop.
+shortening the rediscovery loop — `prefercmd` acts as a **whitelist** of
+commands known to work, `memory` as a **blacklist** of mistakes already made,
+so a subagent never re-derives a command or re-debugs a known failure.
 
 - **Default: on.** Disable with `evolution: false` in the plugin config or the
   `SMART_SUBAGENT_EVOLUTION=false` environment variable.

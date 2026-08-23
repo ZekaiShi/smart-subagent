@@ -2,15 +2,26 @@
 
 [English](README.md) | 简体中文
 
-`smart-subagent` 是一个用于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的轻量插件。它根据稳定的 `agent_key`，将 subagent 严格路由到 DSH 中已经注册的 provider/model 组合，无需重复保存凭据或维护第二套 provider 配置。
+`smart-subagent` 是一个用于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的轻量插件。它把如今散落在不同插件里的三件事收拢到一起——**按角色的 subagent 路由**、**按 agent 的进化维护**（已验证命令 + 经验教训）、以及**一套知识的白名单/黑名单**——让重复任务从已经验证过的起点出发，而不是重新摸索：更少的重试、更少的重复 debug、更省的 token。
 
-插件不限定代理角色。绑定文件可以代表代码审查、测试执行、资料研究、方案规划、结果验证、数据分析或任何其他专用 subagent。
+### 路由
+
+每个稳定的 `agent_key` 映射到同名 Markdown 绑定文件，其中声明 DSH 中已注册的精确 `provider`/`model` 组合。不同的 subagent 角色（代码审查、测试执行、资料研究、方案规划、结果验证、数据分析……）因此可以使用可预期的模型路由，无需重复保存凭据或维护第二套 provider 配置。创建任何子代理前，该组合都会对照 DSH 实时模型注册表进行校验。
+
+### 进化（知识的白名单/黑名单）
+
+插件为每个 agent、每个工作区持续维护 `prefercmd`（已验证命令）和 `memory`（经验教训）。把 `prefercmd` 想成**白名单**——子代理从被证明可行的命令出发，而不是重新推导；把 `memory` 想成**黑名单**——犯过的错被记录下来，不再犯、也不再排一次 bug。二者合起来，让重复运行不再把 token 浪费在重新摸索和重新调试上。
+
+### 零配置、按项目隔离
+
+绑定与进化按项目工作区隔离（落在最近的、拥有 `agents/` 目录的文件夹下的 `.smart_subagent/`），并内置开箱即用的官方角色模板。一切与 DSH 从哪启动无关，插件也不保存任何 API Key、接口地址、凭据或 provider 定义。
 
 ## 功能特点
 
 - 一个 `agent_key` 对应一个同名 Markdown 绑定文件。
 - 严格读取由 `---` 包裹的 front matter 中的 `provider` 和 `model`。
 - 创建子代理前，根据 DSH 实时模型注册表验证精确的 provider/model 组合。
+- 自动维护按 agent / 按工作区的 `prefercmd` + `memory` 进化文件（知识的白名单 + 黑名单），并注入每次前台运行。
 - 支持前台一次性执行和可持续的后台 subagent。
 - 找不到绑定文件时，保留 DSH 官方的父模型继承行为。
 - 不保存 API Key、接口地址、凭据或 provider 定义。
@@ -67,7 +78,7 @@ model: deepseek-v4-flash
 
 ## 进化模式（Evolution）
 
-插件会为每个 agent 自动维护 `prefercmd`（已验证命令）和 `memory`（经验教训）两个文件，通过不断积累减少重复试错，降低 token 浪费。
+插件会为每个 agent 自动维护 `prefercmd`（已验证命令）和 `memory`（经验教训）两个文件，通过不断积累减少重复试错，降低 token 浪费——`prefercmd` 相当于**已验证命令的白名单**，`memory` 相当于**已犯错误的黑名单**，让子代理永远不必重新推导一条命令、也不必重复调试一个已知的坑。
 
 - **默认开启**。可通过配置 `evolution: false` 或环境变量 `SMART_SUBAGENT_EVOLUTION=false` 关闭。
 - **按对话工作区隔离，不依赖启动目录**。每次调用 `smart_subagent` 时，插件读取对话的工作目录（`exec.agent.session.header.cwd`，与 DSH 终端工具解析 workdir 的字段一致），向上找到最近的、拥有 `agents/` 目录的文件夹作为项目工作区；该目录即绑定目录，进化文件位于

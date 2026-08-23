@@ -27,6 +27,13 @@ import {
   removeMainAgentBlock,
   readMainAgentConfig,
   setMainAgentConfig,
+  EVOLUTION_REPORT_OPEN,
+  EVOLUTION_REPORT_CLOSE,
+  hasEvolutionReportBlock,
+  addEvolutionReportBlock,
+  removeEvolutionReportBlock,
+  ensureAgentReportBlocks,
+  ensureWorkspaceProvisioned,
 } from '../evolution.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -334,4 +341,83 @@ test('writeEvolutionFiles writes only provided files and keeps the other', async
   files = await readEvolutionFilesRaw(dir, 'partial')
   assert.equal(files.prefercmd, '- only cmd\n')
   assert.equal(files.memory, '- only note\n')
+})
+
+test('evolution-report block is idempotent and removable', () => {
+  const original = '---\nprovider: p\nmodel: m\n---\n\n# Role\n\nbody text\n'
+  const injected = addEvolutionReportBlock(original)
+  assert.equal(hasEvolutionReportBlock(injected), true)
+  assert.equal(injected.includes(EVOLUTION_REPORT_OPEN), true)
+  assert.equal(injected.includes(EVOLUTION_REPORT_CLOSE), true)
+  assert.equal(injected.includes('[[EVOLUTION]]'), true, 'block teaches the reporting format')
+  // Idempotent: a second add is a no-op.
+  assert.equal(addEvolutionReportBlock(injected), injected)
+  // Reversible: removal restores the original body exactly.
+  assert.equal(removeEvolutionReportBlock(injected), original)
+  // No block present: add then remove round-trips.
+  assert.equal(removeEvolutionReportBlock(original), original)
+})
+
+test('ensureAgentReportBlocks injects into every binding file once', async () => {
+  const agentsDir = await mkdtemp(join(tmpdir(), 'smart-sub-repbind-'))
+  await writeFile(join(agentsDir, 'writer.md'), '---\nprovider: p\nmodel: m\n---\n\n# Writer\n\nrole\n', 'utf8')
+  await writeFile(join(agentsDir, 'planner.md'), '---\nprovider: p\nmodel: m\n---\n\n# Planner\n\nrole\n', 'utf8')
+  // Not a binding file (no valid key): left untouched.
+  await writeFile(join(agentsDir, 'README.md'), 'not a binding\n', 'utf8')
+
+  const injected = await ensureAgentReportBlocks(agentsDir)
+  assert.deepEqual(injected.sort(), ['planner', 'writer'])
+
+  const writer = await readFile(join(agentsDir, 'writer.md'), 'utf8')
+  assert.match(writer, /smart-subagent:evolution-report:start/)
+  assert.match(writer, /# Writer/, 'role body preserved')
+
+  // Second pass: no files reported, nothing changes.
+  const again = await ensureAgentReportBlocks(agentsDir)
+  assert.deepEqual(again, [])
+  assert.equal(await readFile(join(agentsDir, 'writer.md'), 'utf8'), writer)
+
+  // README was never touched.
+  assert.equal(await readFile(join(agentsDir, 'README.md'), 'utf8'), 'not a binding\n')
+})
+
+test('ensureAgentReportBlocks tolerates a missing agents dir', async () => {
+  const injected = await ensureAgentReportBlocks(join(tmpdir(), 'does-not-exist-rep'))
+  assert.deepEqual(injected, [])
+})
+
+test('ensureWorkspaceProvisioned auto-binds AGENTS.md and injects report blocks', async () => {
+  const root = await makeEvoDir()
+  const agentsDir = join(root, 'agents')
+  await mkdir(agentsDir, { recursive: true })
+  await writeFile(join(root, 'AGENTS.md'), '# Workspace\n\nrules\n', 'utf8')
+  await writeFile(join(agentsDir, 'writer.md'), '---\nprovider: p\nmodel: m\n---\n\n# Writer\n\nrole\n', 'utf8')
+
+  const result = await ensureWorkspaceProvisioned(root, agentsDir)
+  assert.equal(result.mainAgentBound, true)
+  assert.deepEqual(result.injected, ['writer'])
+
+  // Main agent is bound: config + reversible block in AGENTS.md.
+  const cfg = await readMainAgentConfig(root)
+  assert.equal(cfg.filename, 'AGENTS.md')
+  assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /smart-subagent:main-evolution:start/)
+  // Evolution files for main are created.
+  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '')
+  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '')
+
+  // Second run: nothing re-injected, main stays bound.
+  const again = await ensureWorkspaceProvisioned(root, agentsDir)
+  assert.equal(again.mainAgentBound, false)
+  assert.deepEqual(again.injected, [])
+})
+
+test('ensureWorkspaceProvisioned skips AGENTS.md binding when absent but still injects', async () => {
+  const root = await makeEvoDir()
+  const agentsDir = join(root, 'agents')
+  await mkdir(agentsDir, { recursive: true })
+  await writeFile(join(agentsDir, 'planner.md'), '---\nprovider: p\nmodel: m\n---\n\n# Planner\n\nrole\n', 'utf8')
+
+  const result = await ensureWorkspaceProvisioned(root, agentsDir)
+  assert.equal(result.mainAgentBound, false)
+  assert.deepEqual(result.injected, ['planner'])
 })

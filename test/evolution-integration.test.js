@@ -401,7 +401,11 @@ test('settings route adds a complete built-in template to a registered workspace
 
   const duplicate = await post('/smart-subagent/template/add', { projectRoot, agentKey: 'code-reviewer' })
   assert.equal(duplicate.status, 500)
-  assert.equal(await readFile(join(projectRoot, 'agents', 'code-reviewer.md'), 'utf8'), original)
+  // Not overwritten back to the bare template: the /projects scan has already
+  // auto-injected the evolution-report block into the copied binding, and the
+  // duplicate add must not clobber it.
+  const after = await readFile(join(projectRoot, 'agents', 'code-reviewer.md'), 'utf8')
+  assert.match(after, /smart-subagent:evolution-report:start/)
 })
 
 test('settings route /smart-subagent/projects reports none when nothing is configured', async () => {
@@ -524,6 +528,102 @@ test('settings route /smart-subagent/model rewrites the binding front matter', a
   assert.match(after, /^provider: other-provider$/m)
   assert.match(after, /^model: deepseek-v3$/m)
   assert.match(after, /role text/)
+})
+
+test('execute auto-provisions a bound workspace on first use', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'smart-sub-auto-'))
+  const projectRoot = join(base, 'proj-auto')
+  const agentsDir = join(projectRoot, 'agents')
+  await mkdir(agentsDir, { recursive: true })
+  await writeFile(join(projectRoot, 'AGENTS.md'), '# Workspace main\n\nrules\n', 'utf8')
+  await writeFile(
+    join(agentsDir, 'writer.md'),
+    '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
+    'utf8',
+  )
+  const starts = []
+  let definition
+  const ctx = {
+    tools: { register(value) { definition = value } },
+    llm: {
+      listProviders: () => [{ id: 'deepseek-official' }],
+      listModels: async () => [{ provider: 'deepseek-official', id: 'deepseek-v4-flash' }],
+    },
+    subagents: {
+      async start(provider, request) {
+        starts.push(request)
+        return {
+          id: 'r-1',
+          result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'done' }] }),
+          async dispose() {},
+        }
+      },
+      async startContinuable(spec) { starts.push(spec); return { childId: 'bg-1', messageId: 'm-1' } },
+    },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: agentsDir, templatesDir, evolution: true, maxDepth: 3,
+  })
+  const sessionExec = {
+    agent: { session: { header: { cwd: projectRoot } } },
+    signal: new AbortController().signal,
+  }
+  await definition.execute({
+    agent_key: 'writer', description: 'write', prompt: 'write the chapter', run_in_background: false,
+  }, sessionExec)
+
+  // Main agent was auto-bound to the workspace AGENTS.md.
+  const agentsMd = await readFile(join(projectRoot, 'AGENTS.md'), 'utf8')
+  assert.match(agentsMd, /smart-subagent:main-evolution:start/)
+  // The binding file was auto-injected with the reporting instruction.
+  const writer = await readFile(join(agentsDir, 'writer.md'), 'utf8')
+  assert.match(writer, /smart-subagent:evolution-report:start/)
+})
+
+test('execute auto-provisioning is skipped when evolution is disabled', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'smart-sub-autooff-'))
+  const projectRoot = join(base, 'proj-off')
+  const agentsDir = join(projectRoot, 'agents')
+  await mkdir(agentsDir, { recursive: true })
+  await writeFile(join(projectRoot, 'AGENTS.md'), '# Workspace main\n\nrules\n', 'utf8')
+  await writeFile(
+    join(agentsDir, 'writer.md'),
+    '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
+    'utf8',
+  )
+  const starts = []
+  let definition
+  const ctx = {
+    tools: { register(value) { definition = value } },
+    llm: {
+      listProviders: () => [{ id: 'deepseek-official' }],
+      listModels: async () => [{ provider: 'deepseek-official', id: 'deepseek-v4-flash' }],
+    },
+    subagents: {
+      async start(provider, request) {
+        starts.push(request)
+        return {
+          id: 'r-1',
+          result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'done' }] }),
+          async dispose() {},
+        }
+      },
+      async startContinuable(spec) { starts.push(spec); return { childId: 'bg-1', messageId: 'm-1' } },
+    },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: agentsDir, templatesDir, evolution: false, maxDepth: 3,
+  })
+  const sessionExec = {
+    agent: { session: { header: { cwd: projectRoot } } },
+    signal: new AbortController().signal,
+  }
+  await definition.execute({
+    agent_key: 'writer', description: 'write', prompt: 'write the chapter', run_in_background: false,
+  }, sessionExec)
+
+  assert.doesNotMatch(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), /smart-subagent:main-evolution:start/)
+  assert.doesNotMatch(await readFile(join(agentsDir, 'writer.md'), 'utf8'), /smart-subagent:evolution-report:start/)
 })
 
 test('execute uses the conversation workspace scope for bindings + evolution', async () => {

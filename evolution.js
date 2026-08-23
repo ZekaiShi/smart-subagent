@@ -68,6 +68,123 @@ export function addMainAgentBlock(text) {
   return clean + newline + newline + mainAgentBlock(newline) + newline
 }
 
+export const EVOLUTION_REPORT_OPEN = '<!-- smart-subagent:evolution-report:start -->'
+export const EVOLUTION_REPORT_CLOSE = '<!-- smart-subagent:evolution-report:end -->'
+
+function evolutionReportBlock(newline = '\n') {
+  return [
+    EVOLUTION_REPORT_OPEN,
+    '',
+    '## Evolution reporting (auto-maintained)',
+    '',
+    'At the end of your run, if you verified a new command or learned a lesson that will',
+    'help future runs, append a `[[EVOLUTION]]` block at the very end of your final',
+    'output so it can be recorded for the next time:',
+    '',
+    '```markdown',
+    '[[EVOLUTION]]',
+    'prefercmd:',
+    '- <verified command>',
+    'memory:',
+    '- <lesson learned>',
+    '[[/EVOLUTION]]',
+    '```',
+    '',
+    'Only report verified, reusable knowledge (no secrets, no unverified assumptions,',
+    'no transient errors). If there is nothing new, omit the block entirely.',
+    '',
+    EVOLUTION_REPORT_CLOSE,
+  ].join(newline)
+}
+
+export function hasEvolutionReportBlock(text) {
+  return typeof text === 'string' && text.includes(EVOLUTION_REPORT_OPEN)
+}
+
+/** Append the evolution-report instruction block to a binding file body.
+ * Idempotent: re-adding when already present is a no-op. */
+export function addEvolutionReportBlock(text) {
+  const newline = text.includes('\r\n') ? '\r\n' : '\n'
+  const clean = removeEvolutionReportBlock(text).trimEnd()
+  return clean + newline + newline + evolutionReportBlock(newline) + newline
+}
+
+/** Remove the evolution-report instruction block from a binding file body.
+ * Returns the original text when no block is present. */
+export function removeEvolutionReportBlock(text) {
+  const open = text.indexOf(EVOLUTION_REPORT_OPEN)
+  const close = text.indexOf(EVOLUTION_REPORT_CLOSE)
+  if (open === -1 && close === -1) return text
+  if (open === -1 || close < open) {
+    throw new Error('smart-subagent: malformed evolution-report block')
+  }
+  const end = close + EVOLUTION_REPORT_CLOSE.length
+  return (text.slice(0, open).trimEnd() + text.slice(end)).trimEnd() + (text.endsWith('\n') ? '\n' : '')
+}
+
+/**
+ * Ensure every `<agent_key>.md` binding file in a workspace's `agents/`
+ * directory carries the evolution-report instruction block (idempotent,
+ * reversible). Returns the agent keys whose files were modified.
+ *
+ * @param {string} agentsDir - the workspace bindings directory
+ * @returns {Promise<string[]>}
+ */
+export async function ensureAgentReportBlocks(agentsDir) {
+  const injected = []
+  let entries
+  try {
+    entries = await readdir(agentsDir, { withFileTypes: true })
+  } catch (error) {
+    if (error?.code === 'ENOENT') return injected
+    throw error
+  }
+  for (const entry of entries) {
+    if (!entry.isFile()) continue
+    const match = /^([A-Za-z0-9][A-Za-z0-9_-]*)\.md$/.exec(entry.name)
+    if (!match) continue
+    // Doc files commonly live next to bindings; never treat them as agents.
+    if (match[1].toUpperCase() === 'README' || match[1].toUpperCase() === 'INDEX') continue
+    const filename = join(agentsDir, entry.name)
+    const text = await readFile(filename, 'utf8')
+    if (hasEvolutionReportBlock(text)) continue
+    await writeFile(filename, addEvolutionReportBlock(text), 'utf8')
+    injected.push(match[1])
+  }
+  return injected
+}
+
+/**
+ * One-shot workspace provisioning so evolution "just works" out of the box:
+ *   1. Auto-bind the workspace-root `AGENTS.md` as the main agent when it
+ *      exists and is not yet bound (adds the reversible main-evolution block).
+ *   2. Auto-inject the `[[EVOLUTION]]` reporting instruction into every
+ *      binding file under `agents/` (idempotent, reversible).
+ * Both steps are best-effort and never throw into the caller.
+ *
+ * @param {string} projectRoot - workspace root
+ * @param {string} agentsDir - workspace bindings directory
+ * @returns {Promise<{ projectRoot: string, mainAgentBound: boolean, injected: string[] }>}
+ */
+export async function ensureWorkspaceProvisioned(projectRoot, agentsDir) {
+  const result = { projectRoot, mainAgentBound: false, injected: [] }
+  try {
+    const cfg = await readMainAgentConfig(projectRoot)
+    if (cfg.available && cfg.filename === '') {
+      await setMainAgentConfig(projectRoot, MAIN_AGENT_FILENAME)
+      result.mainAgentBound = true
+    }
+  } catch (error) {
+    console.error(`[smart-subagent] auto-bind main agent skipped: ${error}`)
+  }
+  try {
+    result.injected = await ensureAgentReportBlocks(agentsDir)
+  } catch (error) {
+    console.error(`[smart-subagent] auto-inject evolution reporting skipped: ${error}`)
+  }
+  return result
+}
+
 export async function readMainAgentConfig(projectRoot) {
   const root = resolve(projectRoot)
   let available = false

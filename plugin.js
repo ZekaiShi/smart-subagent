@@ -18,6 +18,7 @@ import {
   setMainAgentConfig,
 } from './evolution.js'
 import { resolveSessionScope, detectProjectsIn, findProjectRoot, hasDir } from './scope.js'
+import { ensureWorkspaceProvisioned } from './evolution.js'
 
 function loadRuntimeConfig(evolutionDir) {
   try {
@@ -181,6 +182,18 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
           }
         }
         for (const project of found) {
+          // Out-of-the-box provisioning: when a workspace with bound subagents
+          // is first scanned, auto-bind its root AGENTS.md as the main agent
+          // and inject the [[EVOLUTION]] reporting instruction into each
+          // binding file. Idempotent and best-effort (a settings read never
+          // fails because a workspace file could not be written).
+          if (state.evolution) {
+            try {
+              await ensureWorkspaceProvisioned(project.projectRoot, project.agentsDir)
+            } catch (error) {
+              console.error(`[smart-subagent] workspace provisioning skipped: ${error}`)
+            }
+          }
           // Only the workspace's own binding agents: built-in templates are
           // maintained as their own separate group, never mixed in here.
           const agents = (await detectAgents(project.agentsDir, templatesDir))
@@ -622,6 +635,17 @@ export function createApply(defineTool) {
         const effBindingsDir = sessionScope?.bindingsDir ?? bindingsDir
         const effEvolutionDir = sessionScope?.evolutionDir ?? evolutionDir
         const effLegacyEvolutionDir = sessionScope?.legacyEvolutionDir
+        // Out-of-the-box provisioning: the first time a workspace with bound
+        // subagents is used, auto-bind the root AGENTS.md as the main agent
+        // and inject the [[EVOLUTION]] reporting instruction into every
+        // binding file. Idempotent and best-effort; never blocks spawning.
+        if (sessionScope !== undefined && state.evolution) {
+          try {
+            await ensureWorkspaceProvisioned(sessionScope.projectRoot, sessionScope.bindingsDir)
+          } catch (error) {
+            console.error(`[smart-subagent] workspace provisioning skipped: ${error}`)
+          }
+        }
         const agentKey = assertAgentKey(args.agent_key)
         const description = nonEmpty(args.description, 'description')
         // Prefer the user's own binding; fall back to the bundled template so

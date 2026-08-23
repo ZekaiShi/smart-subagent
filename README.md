@@ -119,16 +119,19 @@ shortening the rediscovery loop.
   resolves its workdir from) and walks up to the nearest folder that owns an
   `agents/` directory — the project workspace. That folder becomes the bindings
   directory and evolution lives under
-  `<project>/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` and
+  `<project>/.smart_subagent/evolution/<agent_key>/prefercmd.md` and
   `memory.md`. Different projects therefore never share subagent bindings or
   evolution state, and nothing depends on where the DSH process was launched.
   When a conversation has no session cwd or its workspace has no `agents/`
   folder, the plugin falls back to `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR`
   / the process working directory. The evolution files never appear in the
-  project's `agents/` folder. The `<project>/.dsh/` directory is created
+  project's `agents/` folder. The `<project>/.smart_subagent/` directory is created
   lazily: it only lands on disk when a subagent actually runs and reports
   evolution content (or when you save manually from the settings card) -
-  workspace scanning and project detection are strictly read-only.
+  workspace scanning and project detection are strictly read-only. Existing
+  `.dsh/smart-subagent/evolution` data remains a read-only fallback and is
+  copied into the new location on the first save; legacy files are never
+  deleted automatically.
 - On each foreground run the plugin injects the two files as a bounded context
   block (capped at ~2000 tokens) into the child prompt, so the subagent starts
   from proven commands instead of re-deriving them.
@@ -165,6 +168,12 @@ Under the web profile, Settings → Plugins shows a **smart-subagent** card that
   group and never mixed into a project. Only when a profile has no registered workspaces does it
   fall back to `SMART_SUBAGENT_PROJECTS_DIR` or a fallback dir set in the
   card.
+- **Shows one fixed Main agent row per workspace.** Only the workspace-root
+  `AGENTS.md` can be bound. Binding adds one reversible, marker-delimited
+  instruction block and stores the selection in `.smart_subagent/config.json`.
+  The main agent maintains its own `.smart_subagent/evolution/main/prefercmd.md`
+  and `memory.md`; unbinding removes only the managed block. Workspaces without
+  an `agents/` directory still appear so their Main agent can be configured.
 - **Shows each agent's routing model** (provider · model from its front matter)
   and lets you **switch it with two dropdowns** for project bindings: a
   Provider dropdown listing every registered provider and a model dropdown

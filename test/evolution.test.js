@@ -18,16 +18,71 @@ import {
   MAX_INJECT_CHARS,
   EVOLUTION_OPEN,
   EVOLUTION_CLOSE,
+  MAIN_AGENT_BLOCK_OPEN,
+  MAIN_AGENT_BLOCK_CLOSE,
+  addMainAgentBlock,
+  removeMainAgentBlock,
+  readMainAgentConfig,
+  setMainAgentConfig,
 } from '../evolution.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const templatesDir = join(here, '..', 'templates')
 
-test('defaultEvolutionDir is project-scoped under <cwd>/.dsh/smart-subagent/evolution', () => {
+test('defaultEvolutionDir is project-scoped under <cwd>/.smart_subagent/evolution', () => {
   const d = defaultEvolutionDir()
   // Relative to the launch working directory, so each project is isolated.
   assert.equal(d.startsWith(process.cwd()), true)
-  assert.match(d, /\.dsh[/\\]smart-subagent[/\\]evolution$/)
+  assert.match(d, /\.smart_subagent[/\\]evolution$/)
+})
+
+test('new evolution storage reads legacy files and migrates them on first save', async () => {
+  const root = await makeEvoDir()
+  const current = join(root, '.smart_subagent', 'evolution')
+  const legacy = join(root, '.dsh', 'smart-subagent', 'evolution')
+  await writeEvolutionFiles(legacy, 'reviewer', {
+    prefercmd: '- legacy command\n',
+    memory: '- legacy lesson\n',
+  })
+  const fallback = await readEvolutionFilesRaw(current, 'reviewer', legacy)
+  assert.equal(fallback.prefercmd, '- legacy command\n')
+  assert.equal(fallback.memory, '- legacy lesson\n')
+
+  await writeEvolutionFiles(current, 'reviewer', { memory: '- updated lesson\n' }, legacy)
+  const migrated = await readEvolutionFilesRaw(current, 'reviewer')
+  assert.equal(migrated.prefercmd, '- legacy command\n')
+  assert.equal(migrated.memory, '- updated lesson\n')
+})
+
+test('main agent evolution block is idempotent and removable', () => {
+  const original = '# Project instructions\n\nKeep existing rules.\n'
+  const injected = addMainAgentBlock(original)
+  assert.equal(injected.includes(MAIN_AGENT_BLOCK_OPEN), true)
+  assert.equal(injected.includes(MAIN_AGENT_BLOCK_CLOSE), true)
+  assert.equal(addMainAgentBlock(injected), injected)
+  assert.equal(removeMainAgentBlock(injected), original)
+})
+
+test('one workspace main agent binding updates AGENTS.md and config reversibly', async () => {
+  const root = await makeEvoDir()
+  const filename = join(root, 'AGENTS.md')
+  const original = '# Workspace agent\n\nProject rules.\n'
+  await writeFile(filename, original, 'utf8')
+  const before = await readMainAgentConfig(root)
+  assert.deepEqual(before, { filename: '', available: true, candidates: ['AGENTS.md'] })
+
+  const bound = await setMainAgentConfig(root, 'AGENTS.md')
+  assert.equal(bound.filename, 'AGENTS.md')
+  assert.match(await readFile(filename, 'utf8'), /\.smart_subagent\/evolution\/main\/memory\.md/)
+  assert.deepEqual(JSON.parse(await readFile(join(root, '.smart_subagent', 'config.json'), 'utf8')), {
+    mainAgentFile: 'AGENTS.md',
+  })
+  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '')
+  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '')
+
+  const unbound = await setMainAgentConfig(root, '')
+  assert.equal(unbound.filename, '')
+  assert.equal(await readFile(filename, 'utf8'), original)
 })
 
 test('parseEvolutionBlock returns empty for missing / malformed markers', () => {

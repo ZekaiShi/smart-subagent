@@ -263,8 +263,10 @@ test('settings route /smart-subagent/projects scans registered workspaces', asyn
   // ws-1 IS the project itself (agents/ directly under the workspace root).
   await mkdir(join(base, 'ws-project', 'agents'), { recursive: true })
   // ws-2 is a plain folder whose first-level subdir owns agents/ - NOT found:
-  // a workspace only owns the agents/ folder right under itself.
+  // its nested agent is not scanned, but the registered workspace itself is
+  // still shown so its Main agent can be configured.
   await mkdir(join(base, 'ws-parent', 'nested-project', 'agents'), { recursive: true })
+  await writeFile(join(base, 'ws-parent', 'AGENTS.md'), '# Workspace main agent\n', 'utf8')
   await writeFile(
     join(base, 'ws-project', 'agents', 'writer.md'),
     '---\nprovider: deepseek-official\nmodel: deepseek-v4-flash\n---\n\n# Writer\n\nrole text\n',
@@ -305,10 +307,101 @@ test('settings route /smart-subagent/projects scans registered workspaces', asyn
     captured.scope.workspaces.map((w) => w.path),
     [join(base, 'ws-project'), join(base, 'ws-parent'), join(base, 'missing-dir')],
   )
-  // Only ws-project qualifies: ws-parent has no agents/ of its own (its
-  // nested subdir does not count), and the missing workspace is skipped.
-  assert.deepEqual(captured.projects.map((p) => p.projectName), ['ws-project'])
+  // Existing registered workspaces are shown even without agents/ so the
+  // fixed Main agent row remains available; missing directories are skipped.
+  assert.deepEqual(captured.projects.map((p) => p.projectName), ['ws-project', 'ws-parent'])
   assert.equal(captured.projects[0].agents.length, 1)
+  assert.equal(captured.projects[1].agents.length, 0)
+  assert.deepEqual(captured.projects[1].mainAgent.candidates, ['AGENTS.md'])
+})
+
+test('settings route binds one workspace Main agent and stores its evolution under .smart_subagent', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'smart-sub-main-agent-'))
+  const agentsText = '# Project instructions\n\nKeep this rule.\n'
+  await writeFile(join(projectRoot, 'AGENTS.md'), agentsText, 'utf8')
+  const routes = new Map()
+  const webServer = { register(route) { routes.set(route.path, route) } }
+  const settings = { register() {} }
+  const registry = { list: () => [{ path: projectRoot, title: 'main-workspace' }] }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => {
+      if (services.includes('workspaceRegistry')) cb({ workspaceRegistry: registry })
+      else cb({ webServer, settings })
+    },
+    llm: { listProviders: () => [], listModels: async () => [] },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: join(projectRoot, 'agents'), templatesDir, evolution: true, maxDepth: 3,
+  })
+  const post = async (path, payload) => {
+    const req = { method: 'POST', async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(payload)) } }
+    let captured
+    const res = { writeHead(status) { this.status = status }, end(body) { captured = JSON.parse(body) } }
+    await routes.get(path).handler(req, res)
+    return { status: res.status, body: captured }
+  }
+
+  const bound = await post('/smart-subagent/main-agent', { projectRoot, filename: 'AGENTS.md' })
+  assert.equal(bound.status, 200)
+  assert.equal(bound.body.mainAgent.filename, 'AGENTS.md')
+  assert.match(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), /smart-subagent:main-evolution:start/)
+
+  const saved = await post('/smart-subagent/evolution/save', {
+    projectRoot, agentKey: 'main', prefercmd: '- pnpm test\n', memory: '- keep prompts bounded\n',
+  })
+  assert.equal(saved.status, 200)
+  assert.equal(await readFile(join(projectRoot, '.smart_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '- pnpm test\n')
+  assert.equal(await readFile(join(projectRoot, '.smart_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '- keep prompts bounded\n')
+
+  const unbound = await post('/smart-subagent/main-agent', { projectRoot, filename: '' })
+  assert.equal(unbound.status, 200)
+  assert.equal(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), agentsText)
+})
+
+test('settings route adds a complete built-in template to a registered workspace without overwriting', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'smart-sub-add-template-'))
+  const routes = new Map()
+  const webServer = { register(route) { routes.set(route.path, route) } }
+  const settings = { register() {} }
+  const registry = { list: () => [{ path: projectRoot, title: 'target-workspace' }] }
+  const ctx = {
+    tools: { register() {} },
+    inject: (services, cb) => {
+      if (services.includes('workspaceRegistry')) cb({ workspaceRegistry: registry })
+      else cb({ webServer, settings })
+    },
+    llm: { listProviders: () => [], listModels: async () => [] },
+  }
+  createApply(v => v)(ctx, {
+    bindingsDir: join(projectRoot, 'agents'), templatesDir, evolution: true, maxDepth: 3,
+  })
+
+  const post = async (path, payload) => {
+    const req = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify(payload)) },
+    }
+    let captured
+    const res = { writeHead(status) { this.status = status }, end(body) { captured = JSON.parse(body) } }
+    await routes.get(path).handler(req, res)
+    return { status: res.status, body: captured }
+  }
+
+  const added = await post('/smart-subagent/template/add', { projectRoot, agentKey: 'code-reviewer' })
+  assert.equal(added.status, 200)
+  const copied = await readFile(join(projectRoot, 'agents', 'code-reviewer.md'), 'utf8')
+  const original = await readFile(join(templatesDir, 'code-reviewer.md'), 'utf8')
+  assert.equal(copied, original)
+
+  const listed = await post('/smart-subagent/projects', {})
+  const reviewer = listed.body.projects[0].agents.find((agent) => agent.agentKey === 'code-reviewer')
+  assert.equal(reviewer.source, 'both')
+  assert.equal(reviewer.editable, true)
+
+  const duplicate = await post('/smart-subagent/template/add', { projectRoot, agentKey: 'code-reviewer' })
+  assert.equal(duplicate.status, 500)
+  assert.equal(await readFile(join(projectRoot, 'agents', 'code-reviewer.md'), 'utf8'), original)
 })
 
 test('settings route /smart-subagent/projects reports none when nothing is configured', async () => {
@@ -321,7 +414,8 @@ test('settings route /smart-subagent/projects reports none when nothing is confi
     llm: { listProviders: () => [], listModels: async () => [] },
   }
   createApply(v => v)(ctx, {
-    bindingsDir: join(tmpdir(), 'smart-sub-none-'), templatesDir, evolution: true, maxDepth: 3,
+    bindingsDir: join(tmpdir(), 'smart-sub-none-'), templatesDir, evolution: true,
+    evolutionDir: await mkdtemp(join(tmpdir(), 'smart-sub-none-evo-')), maxDepth: 3,
   })
   const route = routes.get('/smart-subagent/projects')
   let captured
@@ -353,6 +447,7 @@ test('settings route /smart-subagent/config updates the project scan dir and /pr
   }
   createApply(v => v)(ctx, {
     bindingsDir: join(baseA, 'proj-a', 'agents'), templatesDir, evolution: true,
+    evolutionDir: await mkdtemp(join(tmpdir(), 'smart-sub-config-evo-')),
     projectsBaseDir: join(baseA, 'proj-a'), maxDepth: 3,
   })
   const post = (path, payload) => {

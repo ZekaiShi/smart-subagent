@@ -80,6 +80,20 @@ test('an explicit caller prompt overrides the template role prompt', async () =>
   })
 })
 
+test('a workspace copy of a built-in keeps its local route and role prompt', async () => {
+  const localRole = '# Workspace reviewer\n\nUse the workspace-specific review policy.'
+  const h = await harness({
+    'code-reviewer': `---\nprovider: registered-provider\nmodel: registered-model\n---\n\n${localRole}\n`,
+  })
+  await h.definition.execute({
+    agent_key: 'code-reviewer', description: 'review', prompt: '', run_in_background: false,
+  }, exec)
+  assert.deepEqual(h.starts[0].request.agentOptions, {
+    provider: 'registered-provider', model: 'registered-model',
+  })
+  assert.equal(h.starts[0].request.prompt[0].text, localRole)
+})
+
 test('an unknown key with no binding still inherits the parent (no error, no template)', async () => {
   const h = await harness()
   await h.definition.execute({

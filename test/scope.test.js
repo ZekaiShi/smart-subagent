@@ -46,7 +46,8 @@ test('resolveSessionScope: project with agents/ dir is detected from conversatio
   assert.ok(scope, 'scope resolved')
   assert.equal(scope.projectRoot, root)
   assert.equal(scope.bindingsDir, join(root, 'agents'))
-  assert.equal(scope.evolutionDir, join(root, '.dsh', 'smart-subagent', 'evolution'))
+  assert.equal(scope.evolutionDir, join(root, '.smart_subagent', 'evolution'))
+  assert.equal(scope.legacyEvolutionDir, join(root, '.dsh', 'smart-subagent', 'evolution'))
   assert.ok(scope.projectName.length > 0)
 })
 

@@ -1,9 +1,13 @@
-import { readdir, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { readdir, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { assertAgentKey } from './binding.js'
 
 export const EVOLUTION_OPEN = '[[EVOLUTION]]'
 export const EVOLUTION_CLOSE = '[[/EVOLUTION]]'
+export const MAIN_AGENT_KEY = 'main'
+export const MAIN_AGENT_FILENAME = 'AGENTS.md'
+export const MAIN_AGENT_BLOCK_OPEN = '<!-- smart-subagent:main-evolution:start -->'
+export const MAIN_AGENT_BLOCK_CLOSE = '<!-- smart-subagent:main-evolution:end -->'
 export const MAX_PREFERCMD = 40
 export const MAX_MEMORY = 25
 export const MAX_INJECT_CHARS = 6000
@@ -13,7 +17,103 @@ export const MAX_INJECT_CHARS = 6000
  * Each project/conversation keeps its own evolution files, isolated from the
  * others. Override with SMART_SUBAGENT_EVOLUTION_DIR or `evolutionDir`. */
 export function defaultEvolutionDir() {
-  return join(process.cwd(), '.dsh', 'smart-subagent', 'evolution')
+  return join(process.cwd(), '.smart_subagent', 'evolution')
+}
+
+export function projectEvolutionDir(projectRoot) {
+  return join(resolve(projectRoot), '.smart_subagent', 'evolution')
+}
+
+export function legacyProjectEvolutionDir(projectRoot) {
+  return join(resolve(projectRoot), '.dsh', 'smart-subagent', 'evolution')
+}
+
+function mainAgentBlock(newline = '\n') {
+  return [
+    MAIN_AGENT_BLOCK_OPEN,
+    '',
+    '## Workspace evolution',
+    '',
+    'At the beginning of relevant work, read (create them if missing):',
+    '',
+    '- `.smart_subagent/evolution/main/prefercmd.md`',
+    '- `.smart_subagent/evolution/main/memory.md`',
+    '',
+    'Reuse verified commands and lessons when applicable. After completing verified work,',
+    'update these files with concise project-specific commands and lessons. Do not record',
+    'secrets, personal data, unverified assumptions, or transient errors.',
+    '',
+    MAIN_AGENT_BLOCK_CLOSE,
+  ].join(newline)
+}
+
+export function removeMainAgentBlock(text) {
+  const open = text.indexOf(MAIN_AGENT_BLOCK_OPEN)
+  const close = text.indexOf(MAIN_AGENT_BLOCK_CLOSE)
+  if (open === -1 && close === -1) return text
+  if (open === -1 || close < open) {
+    throw new Error('smart-subagent: malformed main-agent evolution block')
+  }
+  const end = close + MAIN_AGENT_BLOCK_CLOSE.length
+  return (text.slice(0, open).trimEnd() + text.slice(end)).trimEnd() + (text.endsWith('\n') ? '\n' : '')
+}
+
+export function addMainAgentBlock(text) {
+  const newline = text.includes('\r\n') ? '\r\n' : '\n'
+  const clean = removeMainAgentBlock(text).trimEnd()
+  return clean + newline + newline + mainAgentBlock(newline) + newline
+}
+
+export async function readMainAgentConfig(projectRoot) {
+  const root = resolve(projectRoot)
+  let available = false
+  try {
+    available = (await stat(join(root, MAIN_AGENT_FILENAME))).isFile()
+  } catch {
+    available = false
+  }
+  let configured = ''
+  try {
+    const config = JSON.parse(await readFile(join(root, '.smart_subagent', 'config.json'), 'utf8'))
+    if (config?.mainAgentFile === MAIN_AGENT_FILENAME) configured = MAIN_AGENT_FILENAME
+  } catch (error) {
+    if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+  }
+  return {
+    filename: configured,
+    available,
+    candidates: available ? [MAIN_AGENT_FILENAME] : [],
+  }
+}
+
+export async function setMainAgentConfig(projectRoot, filename) {
+  const root = resolve(projectRoot)
+  const next = filename === '' ? '' : String(filename)
+  if (next !== '' && next !== MAIN_AGENT_FILENAME) {
+    throw new Error(`smart-subagent: main agent must be the workspace-root ${MAIN_AGENT_FILENAME}`)
+  }
+  const previous = await readMainAgentConfig(root)
+  if (previous.filename !== '') {
+    const previousFile = join(root, previous.filename)
+    const text = await readFile(previousFile, 'utf8')
+    await writeFile(previousFile, removeMainAgentBlock(text), 'utf8')
+  }
+  if (next !== '') {
+    const target = join(root, next)
+    const text = await readFile(target, 'utf8')
+    await writeFile(target, addMainAgentBlock(text), 'utf8')
+    const currentEvolutionDir = projectEvolutionDir(root)
+    const legacyEvolutionDir = legacyProjectEvolutionDir(root)
+    const existing = await readEvolutionFilesRaw(currentEvolutionDir, MAIN_AGENT_KEY, legacyEvolutionDir)
+    await writeEvolutionFiles(currentEvolutionDir, MAIN_AGENT_KEY, {
+      prefercmd: existing.prefercmd,
+      memory: existing.memory,
+    }, legacyEvolutionDir)
+  }
+  const configDir = join(root, '.smart_subagent')
+  await mkdir(configDir, { recursive: true })
+  await writeFile(join(configDir, 'config.json'), JSON.stringify({ mainAgentFile: next }, null, 2) + '\n', 'utf8')
+  return readMainAgentConfig(root)
 }
 
 function agentKeyDir(evolutionDir, agentKey) {
@@ -34,6 +134,19 @@ async function readListFile(filename) {
     if (error?.code === 'ENOENT') return []
     throw new Error(`smart-subagent: failed to read ${filename}`, { cause: error })
   }
+}
+
+async function hasEvolutionFiles(evolutionDir, agentKey) {
+  const dir = agentKeyDir(evolutionDir, agentKey)
+  for (const name of ['prefercmd.md', 'memory.md']) {
+    try {
+      await readFile(join(dir, name), 'utf8')
+      return true
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+  }
+  return false
 }
 
 async function appendListFile(filename, newItems, maxEntries, label) {
@@ -57,8 +170,12 @@ async function appendListFile(filename, newItems, maxEntries, label) {
  *
  * @returns {Promise<{ agentKey: string, prefercmd: string[], memory: string[] }>}
  */
-export async function readEvolution(evolutionDir, agentKey) {
-  const dir = agentKeyDir(evolutionDir, agentKey)
+export async function readEvolution(evolutionDir, agentKey, fallbackEvolutionDir) {
+  const primaryHasFiles = await hasEvolutionFiles(evolutionDir, agentKey)
+  const selectedDir = !primaryHasFiles && typeof fallbackEvolutionDir === 'string'
+    ? fallbackEvolutionDir
+    : evolutionDir
+  const dir = agentKeyDir(selectedDir, agentKey)
   const [prefercmd, memory] = await Promise.all([
     readListFile(join(dir, 'prefercmd.md')),
     readListFile(join(dir, 'memory.md')),
@@ -136,9 +253,18 @@ export function parseEvolutionBlock(text) {
  * @param {string} agentKey
  * @param {{ prefercmd?: string[], memory?: string[] }} updates
  */
-export async function recordEvolution(evolutionDir, agentKey, updates) {
+export async function recordEvolution(evolutionDir, agentKey, updates, fallbackEvolutionDir) {
   const parsed = { prefercmd: [], memory: [], ...(updates ?? {}) }
   const dir = agentKeyDir(evolutionDir, agentKey)
+  if (typeof fallbackEvolutionDir === 'string' && !(await hasEvolutionFiles(evolutionDir, agentKey))) {
+    const legacy = await readEvolution(fallbackEvolutionDir, agentKey)
+    if (legacy.prefercmd.length > 0) {
+      await appendListFile(join(dir, 'prefercmd.md'), legacy.prefercmd, MAX_PREFERCMD, 'prefercmd')
+    }
+    if (legacy.memory.length > 0) {
+      await appendListFile(join(dir, 'memory.md'), legacy.memory, MAX_MEMORY, 'memory')
+    }
+  }
   await mkdir(dir, { recursive: true })
   if (parsed.prefercmd.length > 0) {
     await appendListFile(join(dir, 'prefercmd.md'), parsed.prefercmd, MAX_PREFERCMD, 'prefercmd')
@@ -163,8 +289,12 @@ async function readRawFile(filename) {
  *
  * @returns {Promise<{ agentKey: string, prefercmd: string, memory: string }>}
  */
-export async function readEvolutionFilesRaw(evolutionDir, agentKey) {
-  const dir = agentKeyDir(evolutionDir, agentKey)
+export async function readEvolutionFilesRaw(evolutionDir, agentKey, fallbackEvolutionDir) {
+  const primaryHasFiles = await hasEvolutionFiles(evolutionDir, agentKey)
+  const selectedDir = !primaryHasFiles && typeof fallbackEvolutionDir === 'string'
+    ? fallbackEvolutionDir
+    : evolutionDir
+  const dir = agentKeyDir(selectedDir, agentKey)
   const [prefercmd, memory] = await Promise.all([
     readRawFile(join(dir, 'prefercmd.md')),
     readRawFile(join(dir, 'memory.md')),
@@ -180,8 +310,14 @@ export async function readEvolutionFilesRaw(evolutionDir, agentKey) {
  * @param {string} agentKey
  * @param {{ prefercmd?: string, memory?: string }} files
  */
-export async function writeEvolutionFiles(evolutionDir, agentKey, files) {
+export async function writeEvolutionFiles(evolutionDir, agentKey, files, fallbackEvolutionDir) {
   const dir = agentKeyDir(evolutionDir, agentKey)
+  if (typeof fallbackEvolutionDir === 'string' && !(await hasEvolutionFiles(evolutionDir, agentKey))) {
+    const legacy = await readEvolutionFilesRaw(fallbackEvolutionDir, agentKey)
+    await mkdir(dir, { recursive: true })
+    if (legacy.prefercmd !== '') await writeFile(join(dir, 'prefercmd.md'), legacy.prefercmd, 'utf8')
+    if (legacy.memory !== '') await writeFile(join(dir, 'memory.md'), legacy.memory, 'utf8')
+  }
   await mkdir(dir, { recursive: true })
   const writes = []
   if (typeof files?.prefercmd === 'string') {

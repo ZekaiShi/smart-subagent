@@ -71,10 +71,10 @@ model: deepseek-v4-flash
 
 - **默认开启**。可通过配置 `evolution: false` 或环境变量 `SMART_SUBAGENT_EVOLUTION=false` 关闭。
 - **按对话工作区隔离，不依赖启动目录**。每次调用 `smart_subagent` 时，插件读取对话的工作目录（`exec.agent.session.header.cwd`，与 DSH 终端工具解析 workdir 的字段一致），向上找到最近的、拥有 `agents/` 目录的文件夹作为项目工作区；该目录即绑定目录，进化文件位于
-  `<项目>/.dsh/smart-subagent/evolution/<agent_key>/prefercmd.md` 和
+  `<项目>/.smart_subagent/evolution/<agent_key>/prefercmd.md` 和
   `memory.md`——不同项目各自独立绑定与进化、互不污染，与 DSH 进程从哪启动无关。
   当对话没有会话 cwd、或其工作区没有 `agents/` 文件夹时，回退到 `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR` / 进程工作目录。
-  文件**不会出现在你项目的 `agents/` 文件夹里**。`<项目>/.dsh/` 目录也是**懒创建**的：只有某个 subagent 真正运行并回报了进化内容（或你在设置卡片里手动保存）时才会落盘，工作区扫描/项目检测是纯只读的，绝不会在你硬盘上多出目录。
+  文件**不会出现在你项目的 `agents/` 文件夹里**。`<项目>/.smart_subagent/` 目录也是**懒创建**的：只有某个 subagent 真正运行并回报了进化内容（或你在设置卡片里手动保存）时才会落盘，工作区扫描/项目检测是纯只读的。旧 `.dsh/smart-subagent/evolution` 数据继续作为只读回退；首次保存时复制到新目录，插件不会自动删除旧文件。
 - 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限约 2000 token），让 subagent 直接从已验证的命令出发，不用重新摸索。
 - 前台运行结束后，插件会在最终输出中查找 `[[EVOLUTION]]` 块并合并新记录：
 
@@ -98,6 +98,7 @@ web profile 下，设置 → 插件会出现一张 **smart-subagent** 卡片：
 
 - **按项目分组展示 subagents**。扫描来源是该 profile 注册的所有**工作区**（`ctx.workspaceRegistry`，即你在 web 界面里看到的那些工作区）：每个工作区只认它**自己名下的 `agents/` 文件夹**（不递归子目录）。零配置、跨机器通用--换台电脑、换批工作区，卡片自动跟上；没有则明确显示"未发现"。内置模板单独成组、绝不混入项目组。
   仅当 profile 没有注册任何工作区时，才退回 `SMART_SUBAGENT_PROJECTS_DIR` / 卡片里填写的备用目录。
+- **每个工作区固定显示一行 Main agent**。只允许绑定工作区根目录的 `AGENTS.md`；绑定时加入一个带起止标记、可安全撤销的维护提示块，并把选择保存到 `.smart_subagent/config.json`。主 Agent 单独维护 `.smart_subagent/evolution/main/prefercmd.md` 和 `memory.md`；解绑时只移除插件管理的提示块。即使工作区没有 `agents/` 目录，也会显示这一行。
 - **双下拉切换路由**：Provider 下拉列出所有已注册 provider，模型下拉列出该 provider 的全部已注册模型，任何组合都能选；改动直接改写该 agent `.md` 文件的 `provider:` 与 `model:` 两行，切 provider 时自动选中其第一个模型。
   内置模板 agent 只读显示。
 - 编辑每个 agent 的隐藏 `prefercmd.md` / `memory.md`（按项目的进化文件），并切换全局进化开关。

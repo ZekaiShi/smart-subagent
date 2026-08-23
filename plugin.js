@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { constants, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFile, mkdir } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import { assertAgentKey, assertRegisteredModel, loadBinding, loadTemplate, setBindingModel } from './binding.js'
 import {
   readEvolution,
@@ -11,8 +12,12 @@ import {
   detectAgents,
   readEvolutionFilesRaw,
   writeEvolutionFiles,
+  legacyProjectEvolutionDir,
+  projectEvolutionDir,
+  readMainAgentConfig,
+  setMainAgentConfig,
 } from './evolution.js'
-import { resolveSessionScope, detectProjectsIn, findProjectRoot } from './scope.js'
+import { resolveSessionScope, detectProjectsIn, findProjectRoot, hasDir } from './scope.js'
 
 function loadRuntimeConfig(evolutionDir) {
   try {
@@ -24,6 +29,7 @@ function loadRuntimeConfig(evolutionDir) {
 
 function saveRuntimeConfig(evolutionDir, config) {
   try {
+    mkdirSync(evolutionDir, { recursive: true })
     writeFileSync(join(evolutionDir, 'config.json'), JSON.stringify(config, null, 2), 'utf8')
   } catch (error) {
     console.error(`[smart-subagent] failed to persist runtime config: ${error}`)
@@ -32,10 +38,15 @@ function saveRuntimeConfig(evolutionDir, config) {
 
 /** Evolution directory for a given project root (project-scoped), falling back
  * to the host default when no project root is supplied. */
-async function scopeEvolutionDir(projectRoot, fallbackDir) {
-  if (typeof projectRoot !== 'string' || projectRoot.length === 0) return fallbackDir
+async function scopeEvolutionDirs(projectRoot, fallbackDir) {
+  if (typeof projectRoot !== 'string' || projectRoot.length === 0) {
+    return { evolutionDir: fallbackDir, legacyEvolutionDir: undefined }
+  }
   const root = await findProjectRoot(projectRoot)
-  return join(root, '.dsh', 'smart-subagent', 'evolution')
+  return {
+    evolutionDir: projectEvolutionDir(root),
+    legacyEvolutionDir: legacyProjectEvolutionDir(root),
+  }
 }
 
 function sendJson(res, status, body) {
@@ -58,6 +69,27 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   const error = (error) => ({ error: String(error?.message ?? error) })
 
   const projectsBaseDir = () => runtime.projectsBaseDir
+
+  const allowedWorkspaceRoots = () => {
+    const registry = runtime.workspaceRegistry
+    if (registry !== undefined && typeof registry.list === 'function') {
+      try {
+        const roots = registry.list()
+          .map((workspace) => workspace?.path)
+          .filter((value) => typeof value === 'string' && value.length > 0)
+        if (roots.length > 0) return roots
+      } catch {
+        // Fall through to the configured directory.
+      }
+    }
+    const manual = projectsBaseDir()
+    return typeof manual === 'string' && manual.length > 0 ? [manual] : []
+  }
+
+  const pathKey = (value) => {
+    const normalized = resolve(value)
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+  }
 
   /** Read provider/model for an agent from its binding (or template) file. */
   const routeInfo = async (dir, agentKey) => {
@@ -117,7 +149,17 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
             scanSource = 'manual'
           }
         }
-        const found = await detectProjectsIn(baseDirs, { depth: 0 })
+        const found = scanSource === 'workspaces'
+          ? (await Promise.all(workspaces.map(async (workspace) => {
+              const projectRoot = resolve(workspace.path)
+              if (!(await hasDir(projectRoot))) return undefined
+              return {
+                projectName: workspace.title || basename(projectRoot),
+                projectRoot,
+                agentsDir: join(projectRoot, 'agents'),
+              }
+            }))).filter(Boolean)
+          : await detectProjectsIn(baseDirs, { depth: 0 })
         const projects = []
         const modelsByProvider = new Map()
         // Dropdown data: every registered provider and its models, so any
@@ -159,6 +201,7 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
             projectRoot: project.projectRoot,
             agentsDir: project.agentsDir,
             agents: enriched,
+            mainAgent: await readMainAgentConfig(project.projectRoot),
           })
         }
         // Built-in templates as their own always-visible group (a non-existent
@@ -189,6 +232,60 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
         })
       } catch (cause) {
         sendJson(res, 500, error(cause))
+      }
+    },
+  })
+
+  webServer.register({
+    name: 'smart-subagent-main-agent',
+    kind: 'exact',
+    path: '/smart-subagent/main-agent',
+    handler: async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, error(new Error('use POST')))
+        return
+      }
+      try {
+        const body = await readJsonBody(req)
+        const requestedRoot = resolve(String(body.projectRoot ?? ''))
+        const allowed = allowedWorkspaceRoots().some((root) => pathKey(root) === pathKey(requestedRoot))
+        if (!allowed) throw new Error('projectRoot is not a registered workspace')
+        const mainAgent = await setMainAgentConfig(requestedRoot, String(body.filename ?? ''))
+        sendJson(res, 200, { ok: true, projectRoot: requestedRoot, mainAgent })
+      } catch (cause) {
+        sendJson(res, 500, error(cause))
+      }
+    },
+  })
+
+  webServer.register({
+    name: 'smart-subagent-template-add',
+    kind: 'exact',
+    path: '/smart-subagent/template/add',
+    handler: async (req, res) => {
+      if (req.method !== 'POST') {
+        sendJson(res, 405, error(new Error('use POST')))
+        return
+      }
+      try {
+        const body = await readJsonBody(req)
+        const key = assertAgentKey(String(body.agentKey ?? ''))
+        const requestedRoot = resolve(String(body.projectRoot ?? ''))
+        const allowed = allowedWorkspaceRoots().some((root) => pathKey(root) === pathKey(requestedRoot))
+        if (!allowed) throw new Error('projectRoot is not a registered workspace')
+
+        const template = await loadTemplate(templatesDir, key)
+        if (template === undefined) throw new Error(`unknown built-in template: ${key}`)
+        const targetDir = join(requestedRoot, 'agents')
+        const target = join(targetDir, `${key}.md`)
+        await mkdir(targetDir, { recursive: true })
+        await copyFile(template.filename, target, constants.COPYFILE_EXCL)
+        sendJson(res, 200, { ok: true, projectRoot: requestedRoot, agentKey: key, filename: target })
+      } catch (cause) {
+        const detail = cause?.code === 'EPERM' || cause?.code === 'EACCES'
+          ? new Error(`workspace is not writable (${cause.message})`)
+          : cause
+        sendJson(res, 500, error(detail))
       }
     },
   })
@@ -232,8 +329,8 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
       }
       try {
         const body = await readJsonBody(req)
-        const evoDir = await scopeEvolutionDir(body.projectRoot, evolutionDir)
-        const files = await readEvolutionFilesRaw(evoDir, String(body.agentKey ?? ''))
+        const dirs = await scopeEvolutionDirs(body.projectRoot, evolutionDir)
+        const files = await readEvolutionFilesRaw(dirs.evolutionDir, String(body.agentKey ?? ''), dirs.legacyEvolutionDir)
         sendJson(res, 200, files)
       } catch (cause) {
         sendJson(res, 500, error(cause))
@@ -253,11 +350,11 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
       try {
         const body = await readJsonBody(req)
         const key = assertAgentKey(String(body.agentKey ?? ''))
-        const evoDir = await scopeEvolutionDir(body.projectRoot, evolutionDir)
-        await writeEvolutionFiles(evoDir, key, {
+        const dirs = await scopeEvolutionDirs(body.projectRoot, evolutionDir)
+        await writeEvolutionFiles(dirs.evolutionDir, key, {
           ...(typeof body.prefercmd === 'string' ? { prefercmd: body.prefercmd } : {}),
           ...(typeof body.memory === 'string' ? { memory: body.memory } : {}),
-        })
+        }, dirs.legacyEvolutionDir)
         sendJson(res, 200, { ok: true })
       } catch (cause) {
         sendJson(res, 500, error(cause))
@@ -343,20 +440,20 @@ async function settleForeground(run) {
   return { kind: 'foreground', runId: run.id, output: execution.output }
 }
 
-async function loadAndInject(evolutionDir, agentKey, basePrompt) {
-  const { prefercmd, memory } = await readEvolution(evolutionDir, agentKey)
+async function loadAndInject(evolutionDir, agentKey, basePrompt, legacyEvolutionDir) {
+  const { prefercmd, memory } = await readEvolution(evolutionDir, agentKey, legacyEvolutionDir)
   const block = buildInjection(prefercmd, memory)
   return block ? basePrompt + block : basePrompt
 }
 
-async function settleForegroundAndRecord(run, agentKey, { evolution, evolutionDir }) {
+async function settleForegroundAndRecord(run, agentKey, { evolution, evolutionDir, legacyEvolutionDir }) {
   const settled = await settleForeground(run)
   if (evolution) {
     const text = partialText(settled.output)
     const updates = parseEvolutionBlock(text)
     if (updates.prefercmd.length > 0 || updates.memory.length > 0) {
       // Best-effort record: never let evolution failures break the main flow.
-      await recordEvolution(evolutionDir, agentKey, updates).catch(() => {})
+      await recordEvolution(evolutionDir, agentKey, updates, legacyEvolutionDir).catch(() => {})
     }
   }
   return settled
@@ -383,7 +480,13 @@ export function createApply(defineTool) {
     // registered workspaces. Empty/undefined means pure workspace
     // auto-detection. Precedence: explicit config > env
     // SMART_SUBAGENT_PROJECTS_DIR > persisted <evolutionDir>/config.json.
-    const persistedConfig = loadRuntimeConfig(evolutionDir)
+    const legacyRuntimeConfig = config.evolutionDir || process.env.SMART_SUBAGENT_EVOLUTION_DIR
+      ? {}
+      : loadRuntimeConfig(legacyProjectEvolutionDir(process.cwd()))
+    const persistedConfig = {
+      ...legacyRuntimeConfig,
+      ...loadRuntimeConfig(evolutionDir),
+    }
     const projectsBaseDir = config.projectsBaseDir
       ? resolve(config.projectsBaseDir)
       : (process.env.SMART_SUBAGENT_PROJECTS_DIR
@@ -518,19 +621,26 @@ export function createApply(defineTool) {
         const sessionScope = await resolveSessionScope(exec)
         const effBindingsDir = sessionScope?.bindingsDir ?? bindingsDir
         const effEvolutionDir = sessionScope?.evolutionDir ?? evolutionDir
+        const effLegacyEvolutionDir = sessionScope?.legacyEvolutionDir
         const agentKey = assertAgentKey(args.agent_key)
         const description = nonEmpty(args.description, 'description')
         // Prefer the user's own binding; fall back to the bundled template so
         // the official roles (code-reviewer, researcher, wps-worker, ...) work
         // with zero configuration.
         const binding = await loadBinding(effBindingsDir, agentKey)
-        const template = binding === undefined ? await loadTemplate(templatesDir, agentKey) : undefined
-        if (binding === undefined && template === undefined) {
+        const bundledTemplate = await loadTemplate(templatesDir, agentKey)
+        // When a built-in template has been copied into the workspace, keep
+        // its workspace-owned role body while routing with that file's front
+        // matter. A plain user binding still carries routing metadata only.
+        const template = binding === undefined
+          ? bundledTemplate
+          : (bundledTemplate === undefined ? undefined : await loadTemplate(effBindingsDir, agentKey))
+        if (binding === undefined && bundledTemplate === undefined) {
           // No user binding and no built-in template: preserve DSH's native
           // parent-model inheritance (no agentOptions, no error).
           const rawPrompt = nonEmpty(args.prompt ?? '', 'prompt')
           const evolved = state.evolution
-            ? await loadAndInject(effEvolutionDir, agentKey, rawPrompt)
+            ? await loadAndInject(effEvolutionDir, agentKey, rawPrompt, effLegacyEvolutionDir)
             : rawPrompt
           const request = {
             label: description,
@@ -548,19 +658,18 @@ export function createApply(defineTool) {
             return { kind: 'continuable', subagentId: started.childId }
           }
           const run = await ctx.subagents.start(provider, { ...request, signal: exec.signal })
-          return settleForegroundAndRecord(run, agentKey, { evolution: state.evolution, evolutionDir: effEvolutionDir })
+          return settleForegroundAndRecord(run, agentKey, { evolution: state.evolution, evolutionDir: effEvolutionDir, legacyEvolutionDir: effLegacyEvolutionDir })
         }
-        const route = binding ?? template
+        const route = binding ?? bundledTemplate
         const agentOptions = await assertRegisteredModel(ctx.llm, route)
-        // A template supplies its own role prompt, so the caller may omit
-        // `prompt` for official roles. For a user binding the prompt is still
-        // required — the binding carries routing metadata only.
+        // A bundled template or its workspace copy supplies its role prompt,
+        // so the caller may omit `prompt`. An explicit prompt still wins.
         const prompt = args.prompt ?? ''
         const basePrompt = (template !== undefined && prompt.trim() === '')
-          ? template.rolePrompt
+          ? nonEmpty(template.rolePrompt, 'template role prompt')
           : nonEmpty(prompt, 'prompt')
         const effectivePrompt = state.evolution
-          ? await loadAndInject(effEvolutionDir, agentKey, basePrompt)
+          ? await loadAndInject(effEvolutionDir, agentKey, basePrompt, effLegacyEvolutionDir)
           : basePrompt
         const request = {
           label: description,
@@ -581,7 +690,7 @@ export function createApply(defineTool) {
         }
 
         const run = await ctx.subagents.start(provider, { ...request, signal: exec.signal })
-        return settleForegroundAndRecord(run, agentKey, { evolution: state.evolution, evolutionDir: effEvolutionDir })
+        return settleForegroundAndRecord(run, agentKey, { evolution: state.evolution, evolutionDir: effEvolutionDir, legacyEvolutionDir: effLegacyEvolutionDir })
       },
     }))
   }

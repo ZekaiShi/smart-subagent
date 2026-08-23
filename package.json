@@ -1,6 +1,6 @@
 {
   "name": "smart-subagent",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Unified DeepSeek Harness plugin: role-based subagent routing + per-agent evolution — prefercmd/memory as knowledge allow/deny lists, so repeated tasks start from proven commands and save tokens",
   "type": "module",
   "main": "index.js",

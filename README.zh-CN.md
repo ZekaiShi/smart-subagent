@@ -1,5 +1,7 @@
 # smart-subagent
 
+![smart-subagent — Route. Remember. Evolve.](assets/Smart-subagent-image-abstract.png)
+
 [English](README.md) | 简体中文
 
 `smart-subagent` 是一个用于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的轻量插件。它把如今散落在不同插件里的三件事收拢到一起——**按角色的 subagent 路由**、**按 agent 的进化维护**（已验证命令 + 经验教训）、以及**一套知识的白名单/黑名单**——让重复任务从已经验证过的起点出发，而不是重新摸索：更少的重试、更少的重复 debug、更省的 token。
@@ -80,13 +82,19 @@ model: deepseek-v4-flash
 
 插件会为每个 agent 自动维护 `prefercmd`（已验证命令）和 `memory`（经验教训）两个文件，通过不断积累减少重复试错，降低 token 浪费——`prefercmd` 相当于**已验证命令的白名单**，`memory` 相当于**已犯错误的黑名单**，让子代理永远不必重新推导一条命令、也不必重复调试一个已知的坑。
 
+- **存储保留完整条目，大小保证在注入侧。** 每个存储文件只做去重并按条目数上限控制（prefercmd 40 条 / memory 25 条），**绝不截断条目**——一条长命令或教训会完整保存，即使文件偶尔超过 4000 字符。唯一的硬上限是注入上下文：每次运行把两个文件作为受 `MAX_INJECT_CHARS`（6000）约束的块注入。注入什么由**优先级**决定，再由**摘要**压缩——信息是被浓缩，而不是被丢弃。
+
+- **条目优先级。** 给条目加前缀来控制注入方式：`!` 表示 **P0 永久**（总是完整注入，永不压缩/永不丢弃）；`?` 表示 **P2 可压缩**（最后注入；预算紧张时最先被摘要或跳过，但仍保留在文件里）；无前缀为 **P1 普通**（在剩余预算内按最新优先注入）。预算分配顺序为 P0 → P1 → P2。
+
+- **同类命令摘要。** 与其注入每条具体命令，`prefercmd` 中**相同命令前缀出现 ≥3 次**的条目会合并成一条摘要行（例如 `git …（3 条相关命令：…）`）；任何超过 300 字符的单条内容会被浓缩为短头部 + 省略号。如需语义更强的摘要，可给 `buildInjectionAsync` 传入 `options.summarize`（例如基于 `ctx.llm` 的 LLM 摘要器）。
+
 - **默认开启**。可通过配置 `evolution: false` 或环境变量 `SMART_SUBAGENT_EVOLUTION=false` 关闭。
 - **按对话工作区隔离，不依赖启动目录**。每次调用 `smart_subagent` 时，插件读取对话的工作目录（`exec.agent.session.header.cwd`，与 DSH 终端工具解析 workdir 的字段一致），向上找到最近的、拥有 `agents/` 目录的文件夹作为项目工作区；该目录即绑定目录，进化文件位于
   `<项目>/.smart_subagent/evolution/<agent_key>/prefercmd.md` 和
   `memory.md`——不同项目各自独立绑定与进化、互不污染，与 DSH 进程从哪启动无关。
   当对话没有会话 cwd、或其工作区没有 `agents/` 文件夹时，回退到 `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR` / 进程工作目录。
   文件**不会出现在你项目的 `agents/` 文件夹里**。`<项目>/.smart_subagent/` 目录也是**懒创建**的：只有某个 subagent 真正运行并回报了进化内容（或你在设置卡片里手动保存）时才会落盘，工作区扫描/项目检测是纯只读的。旧 `.dsh/smart-subagent/evolution` 数据继续作为只读回退；首次保存时复制到新目录，插件不会自动删除旧文件。
-- 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限约 2000 token），让 subagent 直接从已验证的命令出发，不用重新摸索。
+- 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限 `MAX_INJECT_CHARS` = 6000 字符），让 subagent 直接从已验证的命令出发，不用重新摸索。
 - 前台运行结束后，插件会在最终输出中查找 `[[EVOLUTION]]` 块并合并新记录：
 
   ```markdown

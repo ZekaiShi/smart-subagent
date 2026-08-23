@@ -7,6 +7,8 @@ import test from 'node:test'
 import {
   parseEvolutionBlock,
   buildInjection,
+  buildInjectionAsync,
+  splitPriority,
   readEvolution,
   recordEvolution,
   detectAgents,
@@ -16,6 +18,7 @@ import {
   MAX_PREFERCMD,
   MAX_MEMORY,
   MAX_INJECT_CHARS,
+  MAX_FILE_CHARS,
   EVOLUTION_OPEN,
   EVOLUTION_CLOSE,
   MAIN_AGENT_BLOCK_OPEN,
@@ -149,6 +152,72 @@ test('buildInjection trims tail when content exceeds maxChars', () => {
   assert.ok(out.includes('item-'), 'some items remain')
 })
 
+test('splitPriority classifies ! pinned, ? soft, default normal', () => {
+  assert.deepEqual(splitPriority('! deploy with pnpm test'), { tier: 0, text: 'deploy with pnpm test' })
+  assert.deepEqual(splitPriority('? some transient note'), { tier: 2, text: 'some transient note' })
+  assert.deepEqual(splitPriority('  plain cmd  '), { tier: 1, text: 'plain cmd' })
+})
+
+test('buildInjection always injects pinned entries even when budget is tiny', () => {
+  // header(35) + `- ALWAYS_PIN`(13) + three normal lines = 60 chars total.
+  const out = buildInjection(['! ALWAYS_PIN', 'b', 'c', 'd'], [], 40)
+  assert.match(out, /ALWAYS_PIN/, 'pinned entry survives a tiny budget')
+  assert.doesNotMatch(out, /- c/, 'non-pinned dropped when the budget is tight')
+})
+
+test('buildInjection drops soft (?) entries first and keeps newest normals', () => {
+  // Body order: header(35) + pinned1(10) + normal2(10) + normal1(10) + soft2(8) + soft1(8) = 81.
+  const pref = ['! pinned1', 'normal1', 'normal2', '? soft1', '? soft2']
+  const out = buildInjection(pref, [], 70)
+  assert.match(out, /pinned1/, 'pinned kept')
+  assert.match(out, /normal1/, 'newer normal kept')
+  assert.match(out, /normal2/, 'newest normal kept')
+  assert.doesNotMatch(out, /soft1/, 'soft dropped first (tail)')
+  assert.doesNotMatch(out, /soft2/, 'soft dropped first (tail)')
+})
+
+test('buildInjection summarizes >=GROUP_MIN similar prefercmd into one line', () => {
+  const cmds = [
+    'python build.py',
+    'python test.py',
+    'python lint.py',
+    'pnpm install',
+    'pnpm run build',
+  ]
+  const out = buildInjection(cmds, [])
+  const body = out.split('\n').filter(l => l.startsWith('- '))
+  // The three `python ...` entries collapse into one summary line.
+  assert.ok(body.some(l => l.includes('python') && l.includes('相关命令')), 'python group summarized')
+  assert.ok(body.some(l => l.includes('pnpm install')), 'small groups stay as-is')
+  assert.ok(body.some(l => l.includes('pnpm run build')), 'small groups stay as-is')
+  assert.ok(body.filter(l => l.includes('python')).length === 1, 'only one python line remains')
+})
+
+test('buildInjection condenses a single oversized entry to a short head', () => {
+  const huge = 'C'.repeat(5000)
+  const out = buildInjection([huge], [], 6000)
+  assert.match(out, /C{100,}/, 'head survives')
+  assert.match(out, /…/, 'ends with ellipsis')
+  assert.ok(out.length <= 6000 + 200, 'stays bounded')
+})
+
+test('buildInjectionAsync honors an async summarizer and falls back to heuristic', async () => {
+  const seen = []
+  const out = await buildInjectionAsync(
+    ['alpha cmd', 'alpha test', 'alpha lint', 'beta cmd'],
+    [],
+    { summarize: async (section, texts) => {
+      seen.push([section, texts.length])
+      return `summary of ${texts.length} entries`
+    } },
+  )
+  assert.match(out, /summary of 4 entries/, 'async summarizer used for flexible entries')
+  assert.deepEqual(seen, [['prefercmd', 4]], 'summarizer called once with all flexible texts')
+
+  const fallback = await buildInjectionAsync(['x one', 'x two', 'x three'], [])
+  assert.match(fallback, /相关命令/, 'heuristic grouping applies when no summarizer given')
+})
+
 async function makeEvoDir() {
   return await mkdtemp(join(tmpdir(), 'smart-sub-evo-'))
 }
@@ -181,6 +250,35 @@ test('recordEvolution enforces max entries by dropping oldest', async () => {
   assert.equal(prefercmd.length, MAX_PREFERCMD)
   assert.equal(prefercmd[0], `cmd-${5}`)  // oldest dropped
   assert.equal(prefercmd.at(-1), `cmd-${MAX_PREFERCMD + 4}`)
+})
+
+test('recordEvolution stores a single oversized entry whole (no per-file char truncation)', async () => {
+  const dir = await makeEvoDir()
+  const huge = 'X'.repeat(MAX_FILE_CHARS * 2)
+  await recordEvolution(dir, 'big', { prefercmd: [huge] })
+  const { prefercmd } = await readEvolution(dir, 'big')
+  assert.deepEqual(prefercmd, [huge], 'entry is stored in full')
+  const raw = await readEvolutionFilesRaw(dir, 'big')
+  assert.ok(raw.prefercmd.length > MAX_FILE_CHARS, 'file may exceed MAX_FILE_CHARS at storage')
+})
+
+test('recordEvolution keeps newest entries whole and enforces the entry cap', async () => {
+  const dir = await makeEvoDir()
+  const items = Array.from({ length: MAX_MEMORY + 20 }, (_, i) => `lesson-${i}-${'y'.repeat(120)}`)
+  await recordEvolution(dir, 'packed', { memory: items })
+  const { memory } = await readEvolution(dir, 'packed')
+  assert.equal(memory.length, MAX_MEMORY, 'entry cap still applies')
+  assert.equal(memory.at(-1), items.at(-1), 'newest entry is preserved')
+  // Short entries stay within the budget naturally, but the guarantee lives
+  // at injection time, not at storage.
+})
+
+test('buildInjection caps at maxChars and keeps an oversized entry head', () => {
+  const huge = 'H'.repeat(MAX_INJECT_CHARS * 2)
+  const out = buildInjection([huge], [], MAX_INJECT_CHARS)
+  assert.ok(out.length <= MAX_INJECT_CHARS + 200, 'injected context stays bounded')
+  assert.match(out, /…/, 'oversized entry head is kept with an ellipsis')
+  assert.match(out, /H{200,}/, 'a long run of the entry head survives, not dropped wholesale')
 })
 
 test('recordEvolution rejects invalid agent key with a clear error', async () => {

@@ -1,5 +1,7 @@
 # smart-subagent
 
+![smart-subagent — Route. Remember. Evolve.](assets/Smart-subagent-image-abstract.png)
+
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![npm version](https://img.shields.io/npm/v/smart-subagent.svg)](https://www.npmjs.com/package/smart-subagent)
@@ -124,6 +126,29 @@ shortening the rediscovery loop — `prefercmd` acts as a **whitelist** of
 commands known to work, `memory` as a **blacklist** of mistakes already made,
 so a subagent never re-derives a command or re-debugs a known failure.
 
+- **Storage keeps entries whole; the size guarantee lives at injection.**
+  Each stored file is deduplicated and bounded by entry count (40 prefercmd,
+  25 memory), never by truncating an entry — a long command or lesson is kept
+  in full even when a file grows beyond 4000 chars. The one hard bound is the
+  injected context: each run injects the two files as a block capped at
+  `MAX_INJECT_CHARS` (6000). What gets injected is decided by priority, then
+  compressed by summarization — information is condensed, not discarded.
+
+- **Entry priority.** Prefix an entry to control how it is injected:
+  `!` marks it **P0 permanent** (always injected in full, never compressed or
+  dropped), `?` marks it **P2 compressible** (injected last; the first to be
+  summarized or skipped when the budget is tight, though it stays in the file),
+  and an unprefixed entry is **P1 normal** (injected newest-first into the
+  remaining budget). Budget allocation is P0 → P1 → P2.
+
+- **Similar-command summarization.** Instead of injecting every concrete
+  command, `prefercmd` entries that share the same leading token and appear
+  `>= 3` times collapse into a single summary line (e.g. `git …（3 条相关命令：
+  …）`), and any single entry longer than 300 chars is condensed to a short
+  head + ellipsis. A custom summarizer can be supplied via
+  `buildInjectionAsync` (`options.summarize`, e.g. an LLM-backed summarizer
+  over `ctx.llm`) for semantic summaries.
+
 - **Default: on.** Disable with `evolution: false` in the plugin config or the
   `SMART_SUBAGENT_EVOLUTION=false` environment variable.
 - **Per-conversation workspace, not the launch directory.** Each time the
@@ -146,8 +171,8 @@ so a subagent never re-derives a command or re-debugs a known failure.
   copied into the new location on the first save; legacy files are never
   deleted automatically.
 - On each foreground run the plugin injects the two files as a bounded context
-  block (capped at ~2000 tokens) into the child prompt, so the subagent starts
-  from proven commands instead of re-deriving them.
+  block (capped at `MAX_INJECT_CHARS` = 6000 chars) into the child prompt, so
+  the subagent starts from proven commands instead of re-deriving them.
 - At the end of a foreground run the plugin scans the final output for an
   `[[EVOLUTION]]` block and merges new entries:
 

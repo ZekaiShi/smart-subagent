@@ -11,6 +11,10 @@ export const MAIN_AGENT_BLOCK_CLOSE = '<!-- smart-subagent:main-evolution:end --
 export const MAX_PREFERCMD = 40
 export const MAX_MEMORY = 25
 export const MAX_INJECT_CHARS = 6000
+/** Informational per-file guidance (prefercmd.md / memory.md). The stored
+ * files are NOT hard-capped: entries are kept whole and deduplicated, and the
+ * bounded guarantee lives at injection time (MAX_INJECT_CHARS). */
+export const MAX_FILE_CHARS = 4000
 
 /** Default project-scoped evolution directory, derived from the DSH launch
  * working directory (the same base the bindings directory resolves from).
@@ -149,15 +153,23 @@ async function hasEvolutionFiles(evolutionDir, agentKey) {
   return false
 }
 
+/**
+ * Keep the newest `maxEntries` entries (the list is oldest -> newest) and
+ * write them whole. There is deliberately no per-file character truncation
+ * here: stored entries are never cut, so a long command or lesson is kept in
+ * full even when a file occasionally grows beyond MAX_FILE_CHARS. The bounded
+ * size guarantee lives at injection time (buildInjection caps the context at
+ * MAX_INJECT_CHARS), not at storage.
+ */
 async function appendListFile(filename, newItems, maxEntries, label) {
   const existing = await readListFile(filename)
   const merged = [...existing]
   for (const item of newItems) {
     if (!merged.includes(item)) merged.push(item)
   }
-  const trimmed = merged.slice(-maxEntries)
-  const body = trimmed.length > 0
-    ? trimmed.map(i => `- ${i}`).join('\n') + '\n'
+  const kept = merged.slice(-maxEntries)
+  const body = kept.length > 0
+    ? kept.map(i => `- ${i}`).join('\n') + '\n'
     : ''
   const header = `# ${label} — auto-maintained by smart-subagent evolution mode\n`
     + `# Edit via the smart-subagent settings UI; manual edits are preserved\n\n`
@@ -184,35 +196,215 @@ export async function readEvolution(evolutionDir, agentKey, fallbackEvolutionDir
 }
 
 /**
- * Build a bounded evolution injection block to prepend/append to the child prompt.
- * Returns an empty string when both lists are empty.
- *
- * @param {string[]} prefercmd
- * @param {string[]} memory
- * @param {number} [maxChars]
- * @returns {string}
+ * Priority markers for evolution entries. Entries are prefixed in the stored
+ * Markdown files and stripped from the injected text.
+ *   - `!` P0 permanent: always injected in full, never compressed or dropped.
+ *   - `?` P2 compressible: injected last, first to be summarized or dropped
+ *     when the budget is tight (still kept in the file).
+ *   - no marker: P1 normal.
  */
-export function buildInjection(prefercmd, memory, maxChars = MAX_INJECT_CHARS) {
-  const sections = []
-  if (prefercmd.length > 0) {
-    sections.push('## Known working commands (prefercmd)\n' + prefercmd.map(i => `- ${i}`).join('\n'))
+export const PRIO_PINNED = '!'
+export const PRIO_SOFT = '?'
+export const GROUP_MIN = 3
+export const BIG_ENTRY_CHARS = 300
+
+/** Classify an entry string into a priority tier, returning the stripped text
+ * and the tier. The marker is a single leading character. */
+export function splitPriority(entry) {
+  const text = String(entry)
+  if (text.startsWith(PRIO_PINNED)) return { tier: 0, text: text.slice(1).trim() }
+  if (text.startsWith(PRIO_SOFT)) return { tier: 2, text: text.slice(1).trim() }
+  return { tier: 1, text: text.trim() }
+}
+
+/** Leading token of a command entry, used to detect "similar commands". */
+function commandGroupOf(text) {
+  const m = /^([A-Za-z0-9_.@/-]+)/.exec(text)
+  return m ? m[1] : ''
+}
+
+/**
+ * Deterministic heuristic summarizer. For prefercmd, groups same-prefix
+ * commands that appear >= GROUP_MIN times into one summary line instead of
+ * listing every concrete command; for both lists, condenses entries longer
+ * than BIG_ENTRY_CHARS into a short head + ellipsis. Returns the `- ` lines.
+ */
+function heuristicLines(section, texts) {
+  const condense = t => t.length > BIG_ENTRY_CHARS ? t.slice(0, BIG_ENTRY_CHARS - 1) + '…' : t
+  if (section !== 'prefercmd') {
+    return texts.map(t => `- ${condense(t)}`)
   }
-  if (memory.length > 0) {
-    sections.push('## Lessons learned (memory)\n' + memory.map(i => `- ${i}`).join('\n'))
-  }
-  if (sections.length === 0) return ''
-  let body = sections.join('\n\n')
-  if (body.length > maxChars) {
-    // Trim from the tail by removing last lines until we fit.
-    const lines = body.split('\n')
-    while (lines.length > 1 && body.length > maxChars) {
-      lines.pop()
-      body = lines.join('\n')
+  const groups = new Map()
+  const singles = []
+  for (const t of texts) {
+    const g = commandGroupOf(t)
+    if (g) {
+      if (!groups.has(g)) groups.set(g, [])
+      groups.get(g).push(t)
+    } else {
+      singles.push(t)
     }
   }
+  const lines = []
+  for (const [g, items] of groups) {
+    if (items.length >= GROUP_MIN) {
+      const shown = items.slice(0, 2).map(i => i.length > 40 ? i.slice(0, 40) + '…' : i)
+      lines.push(`- ${g} …（${items.length} 条相关命令：${shown.join(' / ')}）`)
+    } else {
+      singles.push(...items)
+    }
+  }
+  for (const item of singles) lines.push(`- ${condense(item)}`)
+  return lines
+}
+
+/** Assemble ordered section entries into the final bounded block. Pinned lines
+ * are never dropped; when they alone exceed the budget they win over the cap. */
+function renderInjection(sections, maxChars) {
+  if (sections.length === 0) return ''
+  const entries = []
+  for (const s of sections) {
+    entries.push({ kind: 'header', text: s.header, section: s })
+    for (const l of s.lines) entries.push({ kind: 'entry', text: l.text, pinned: l.pinned, section: s })
+  }
+  const countOf = new Map(sections.map(s => [s, s.lines.length]))
+  let length = entries.reduce((n, e) => n + e.text.length + 1, 0) // +1 newline each
+  let finalEntries = entries
+  if (length > maxChars) {
+    // Drop from the end (P2/P1 of the later section first), never a pinned
+    // line, and drop a section header only once its section is empty.
+    const kept = []
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i]
+      if (length <= maxChars) { kept.unshift(e); continue }
+      if (e.kind === 'entry' && !e.pinned) {
+        length -= e.text.length + 1
+        countOf.set(e.section, countOf.get(e.section) - 1)
+        continue
+      }
+      if (e.kind === 'header' && countOf.get(e.section) === 0) {
+        length -= e.text.length + 1
+        continue
+      }
+      kept.unshift(e)
+    }
+    finalEntries = kept
+  }
+  let body = ''
+  for (const e of finalEntries) {
+    if (e.kind === 'header') body += (body ? '\n' : '') + e.text + '\n'
+    else body += e.text + '\n'
+  }
+  body = body.trimEnd()
   return '\n\n<!-- smart-subagent evolution: auto-maintained context (bounded) -->\n'
     + body
     + '\n<!-- /smart-subagent evolution -->'
+}
+
+/**
+ * Build a bounded evolution injection block, capped at `maxChars` (default
+ * MAX_INJECT_CHARS = 6000). Budget allocation by priority tier:
+ *   1. P0 (`!`) entries — injected in full, never compressed or dropped.
+ *   2. P1 (default) entries — newest first, filling the remaining budget.
+ *   3. P2 (`?`) entries — last; summarized or dropped when the budget is tight
+ *      (they stay in the stored file).
+ * Compression: prefercmd entries with the same command prefix and >= GROUP_MIN
+ * occurrences are merged into one summary line, and entries longer than
+ * BIG_ENTRY_CHARS are condensed to a short head + ellipsis. Pass an optional
+ * `options.summarize(section, texts)` (sync) to override the heuristic; for an
+ * async summarizer use buildInjectionAsync. Returns '' when there is nothing
+ * to inject.
+ *
+ * @param {string[]} prefercmd
+ * @param {string[]} memory
+ * @param {{ maxChars?: number, summarize?: (section: 'prefercmd'|'memory', texts: string[]) => string | string[] }} [options]
+ * @returns {string}
+ */
+export function buildInjection(prefercmd, memory, options = {}) {
+  const opts = typeof options === 'number' ? { maxChars: options } : options
+  const maxChars = opts.maxChars ?? MAX_INJECT_CHARS
+  const summarize = opts.summarize ?? null
+  const sections = []
+  for (const [key, src] of [['prefercmd', prefercmd], ['memory', memory]]) {
+    if (src.length === 0) continue
+    const pinned = []
+    const normal = []
+    const soft = []
+    for (const raw of src) {
+      const { tier, text } = splitPriority(raw)
+      if (tier === 0) pinned.push(text)
+      else if (tier === 2) soft.push(text)
+      else normal.push(text)
+    }
+    const lines = []
+    for (const t of pinned) lines.push({ text: `- ${t}`, pinned: true })
+    const flexible = [...normal.reverse(), ...soft.reverse()] // newest first, soft last
+    if (flexible.length > 0) {
+      const rendered = summarize
+        ? [].concat(summarize(key, flexible)).map(s => `- ${s}`)
+        : heuristicLines(key, flexible)
+      for (const l of rendered) lines.push({ text: l, pinned: false })
+    }
+    if (lines.length > 0) {
+      sections.push({
+        header: key === 'prefercmd'
+          ? '## Known working commands (prefercmd)'
+          : '## Lessons learned (memory)',
+        lines,
+      })
+    }
+  }
+  return renderInjection(sections, maxChars)
+}
+
+/**
+ * Async variant of buildInjection: accepts an async `options.summarize`
+ * (e.g. an LLM-backed semantic summarizer via ctx.llm). Falls back to the
+ * deterministic heuristic when no summarizer is given.
+ *
+ * @param {string[]} prefercmd
+ * @param {string[]} memory
+ * @param {{ maxChars?: number, summarize?: (section: 'prefercmd'|'memory', texts: string[]) => Promise<string | string[]> | string | string[] }} [options]
+ * @returns {Promise<string>}
+ */
+export async function buildInjectionAsync(prefercmd, memory, options = {}) {
+  const opts = typeof options === 'number' ? { maxChars: options } : options
+  const maxChars = opts.maxChars ?? MAX_INJECT_CHARS
+  const summarize = opts.summarize ?? null
+  const sections = []
+  for (const [key, src] of [['prefercmd', prefercmd], ['memory', memory]]) {
+    if (src.length === 0) continue
+    const pinned = []
+    const normal = []
+    const soft = []
+    for (const raw of src) {
+      const { tier, text } = splitPriority(raw)
+      if (tier === 0) pinned.push(text)
+      else if (tier === 2) soft.push(text)
+      else normal.push(text)
+    }
+    const lines = []
+    for (const t of pinned) lines.push({ text: `- ${t}`, pinned: true })
+    const flexible = [...normal.reverse(), ...soft.reverse()]
+    if (flexible.length > 0) {
+      let rendered
+      if (summarize) {
+        rendered = [].concat(await summarize(key, flexible)).map(s => `- ${s}`)
+      } else {
+        rendered = heuristicLines(key, flexible)
+      }
+      for (const l of rendered) lines.push({ text: l, pinned: false })
+    }
+    if (lines.length > 0) {
+      sections.push({
+        header: key === 'prefercmd'
+          ? '## Known working commands (prefercmd)'
+          : '## Lessons learned (memory)',
+        lines,
+      })
+    }
+  }
+  return renderInjection(sections, maxChars)
 }
 
 /**

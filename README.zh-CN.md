@@ -1,10 +1,10 @@
-# smart-subagent
+# evo-subagent
 
-![smart-subagent — Route. Remember. Evolve.](assets/Smart-subagent-image-abstract.png)
+![evo-subagent — Route. Remember. Evolve.](assets/Smart-subagent-image-abstract.png)
 
 [English](README.md) | 简体中文
 
-`smart-subagent` 是一个用于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的轻量插件。它把如今散落在不同插件里的三件事收拢到一起——**按角色的 subagent 路由**、**按 agent 的进化维护**（已验证命令 + 经验教训）、以及**一套知识的白名单/黑名单**——让重复任务从已经验证过的起点出发，而不是重新摸索：更少的重试、更少的重复 debug、更省的 token。
+`evo-subagent` 是一个用于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的轻量插件。它把如今散落在不同插件里的三件事收拢到一起——**按角色的 subagent 路由**、**按 agent 的进化维护**（已验证命令 + 经验教训）、以及**一套知识的白名单/黑名单**——让重复任务从已经验证过的起点出发，而不是重新摸索：更少的重试、更少的重复 debug、更省的 token。
 
 ### 路由
 
@@ -16,7 +16,7 @@
 
 ### 零配置、按项目隔离
 
-绑定与进化按项目工作区隔离（落在最近的、拥有 `agents/` 目录的文件夹下的 `.smart_subagent/`），并内置开箱即用的官方角色模板。一切与 DSH 从哪启动无关，插件也不保存任何 API Key、接口地址、凭据或 provider 定义。
+绑定与进化按项目工作区隔离（落在最近的、拥有 `agents/` 目录的文件夹下的 `.evo_subagent/`），并内置开箱即用的官方角色模板。一切与 DSH 从哪启动无关，插件也不保存任何 API Key、接口地址、凭据或 provider 定义。
 
 ## 功能特点
 
@@ -34,19 +34,19 @@
 从 npm 安装到 DSH profile：
 
 ```sh
-dsh plugin add smart-subagent
+dsh plugin add evo-subagent
 ```
 
 从 GitHub 安装：
 
 ```sh
-dsh plugin add github:ZekaiShi/smart-subagent
+dsh plugin add github:ZekaiShi/evo-subagent
 ```
 
 本地开发安装：
 
 ```sh
-dsh plugin add ./smart-subagent
+dsh plugin add ./evo-subagent
 ```
 
 如需指定非默认 profile，追加 `--profile <名称>`。
@@ -88,12 +88,12 @@ model: deepseek-v4-flash
 
 - **同类命令摘要。** 与其注入每条具体命令，`prefercmd` 中**相同命令前缀出现 ≥3 次**的条目会合并成一条摘要行（例如 `git …（3 条相关命令：…）`）；任何超过 300 字符的单条内容会被浓缩为短头部 + 省略号。如需语义更强的摘要，可给 `buildInjectionAsync` 传入 `options.summarize`（例如基于 `ctx.llm` 的 LLM 摘要器）。
 
-- **默认开启**。可通过配置 `evolution: false` 或环境变量 `SMART_SUBAGENT_EVOLUTION=false` 关闭。
-- **按对话工作区隔离，不依赖启动目录**。每次调用 `smart_subagent` 时，插件读取对话的工作目录（`exec.agent.session.header.cwd`，与 DSH 终端工具解析 workdir 的字段一致），向上找到最近的、拥有 `agents/` 目录的文件夹作为项目工作区；该目录即绑定目录，进化文件位于
-  `<项目>/.smart_subagent/evolution/<agent_key>/prefercmd.md` 和
+- **默认开启**。可通过配置 `evolution: false` 或环境变量 `EVO_SUBAGENT_EVOLUTION=false` 关闭。
+- **按对话工作区隔离，不依赖启动目录**。每次调用 `evo_subagent` 时，插件读取对话的工作目录（`exec.agent.session.header.cwd`，与 DSH 终端工具解析 workdir 的字段一致），向上找到最近的、拥有 `agents/` 目录的文件夹作为项目工作区；该目录即绑定目录，进化文件位于
+  `<项目>/.evo_subagent/evolution/<agent_key>/prefercmd.md` 和
   `memory.md`——不同项目各自独立绑定与进化、互不污染，与 DSH 进程从哪启动无关。
-  当对话没有会话 cwd、或其工作区没有 `agents/` 文件夹时，回退到 `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR` / 进程工作目录。
-  文件**不会出现在你项目的 `agents/` 文件夹里**。`<项目>/.smart_subagent/` 目录也是**懒创建**的：只有某个 subagent 真正运行并回报了进化内容（或你在设置卡片里手动保存）时才会落盘，工作区扫描/项目检测是纯只读的。旧 `.dsh/smart-subagent/evolution` 数据继续作为只读回退；首次保存时复制到新目录，插件不会自动删除旧文件。
+  当对话没有会话 cwd、或其工作区没有 `agents/` 文件夹时，回退到 `bindingsDir` / `EVO_SUBAGENT_EVOLUTION_DIR` / 进程工作目录。
+  文件**不会出现在你项目的 `agents/` 文件夹里**。`<项目>/.evo_subagent/` 目录也是**懒创建**的：只有某个 subagent 真正运行并回报了进化内容（或你在设置卡片里手动保存）时才会落盘，工作区扫描/项目检测是纯只读的。旧 `.smart_subagent/evolution` 数据继续作为只读回退；首次保存时复制到新目录，插件不会自动删除旧文件。
 - 每次前台运行时，插件会把这两个文件作为有界上下文块注入子代理提示词（上限 `MAX_INJECT_CHARS` = 6000 字符），让 subagent 直接从已验证的命令出发，不用重新摸索。
 - 前台运行结束后，插件会在最终输出中查找 `[[EVOLUTION]]` 块并合并新记录：
 
@@ -109,15 +109,15 @@ model: deepseek-v4-flash
 - 自动去重，条目有上限（prefercmd 40 条、memory 25 条），超限丢最旧——注入 token 成本恒定。
 - 后台运行不记录（拿不到最终输出）。
 
-可通过 `smart-subagent/evolution` 的 `detectAgents(bindingsDir, templatesDir)` 程序化列出所有可用 agent key。
+可通过 `evo-subagent/evolution` 的 `detectAgents(bindingsDir, templatesDir)` 程序化列出所有可用 agent key。
 
 ## 设置卡片
 
-web profile 下，设置 → 插件会出现一张 **smart-subagent** 卡片：
+web profile 下，设置 → 插件会出现一张 **evo-subagent** 卡片：
 
 - **按项目分组展示 subagents**。扫描来源是该 profile 注册的所有**工作区**（`ctx.workspaceRegistry`，即你在 web 界面里看到的那些工作区）：每个工作区只认它**自己名下的 `agents/` 文件夹**（不递归子目录）。零配置、跨机器通用--换台电脑、换批工作区，卡片自动跟上；没有则明确显示"未发现"。内置模板单独成组、绝不混入项目组。
-  仅当 profile 没有注册任何工作区时，才退回 `SMART_SUBAGENT_PROJECTS_DIR` / 卡片里填写的备用目录。
-- **每个工作区固定显示一行 Main agent**。只允许绑定工作区根目录的 `AGENTS.md`；绑定时加入一个带起止标记、可安全撤销的维护提示块，并把选择保存到 `.smart_subagent/config.json`。主 Agent 单独维护 `.smart_subagent/evolution/main/prefercmd.md` 和 `memory.md`；解绑时只移除插件管理的提示块。即使工作区没有 `agents/` 目录，也会显示这一行。
+  仅当 profile 没有注册任何工作区时，才退回 `EVO_SUBAGENT_PROJECTS_DIR` / 卡片里填写的备用目录。
+- **每个工作区固定显示一行 Main agent**。只允许绑定工作区根目录的 `AGENTS.md`；绑定时加入一个带起止标记、可安全撤销的维护提示块，并把选择保存到 `.evo_subagent/config.json`。主 Agent 单独维护 `.evo_subagent/evolution/main/prefercmd.md` 和 `memory.md`；解绑时只移除插件管理的提示块。即使工作区没有 `agents/` 目录，也会显示这一行。
 - **双下拉切换路由**：Provider 下拉列出所有已注册 provider，模型下拉列出该 provider 的全部已注册模型，任何组合都能选；改动直接改写该 agent `.md` 文件的 `provider:` 与 `model:` 两行，切 provider 时自动选中其第一个模型。
   内置模板 agent 只读显示。
 - 编辑每个 agent 的隐藏 `prefercmd.md` / `memory.md`（按项目的进化文件），并切换全局进化开关。
@@ -129,21 +129,21 @@ web profile 下，设置 → 插件会出现一张 **smart-subagent** 卡片：
 PowerShell：
 
 ```powershell
-$env:SMART_SUBAGENT_BINDINGS_DIR = 'C:\path\to\agents'
+$env:EVO_SUBAGENT_BINDINGS_DIR = 'C:\path\to\agents'
 dsh   # 或你平常启动 DSH 的方式（dsh web、桌面客户端等）
 ```
 
 Bash：
 
 ```sh
-SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
+EVO_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
 ```
 
 插件仍将 `DSH_AGENT_BINDINGS_DIR` 作为兼容回退变量。
 
 ## 工具接口
 
-插件默认注册 `smart_subagent`。
+插件默认注册 `evo_subagent`。
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
@@ -164,7 +164,7 @@ SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
 
 ## DeepSeek 推理强度
 
-`smart-subagent` 不覆盖 `reasoningEffort`。使用 `provider: deepseek-official` 时，由 DeepSeek 官方适配器采用其配置的默认值；DSH 默认设置为 `high`。
+`evo-subagent` 不覆盖 `reasoningEffort`。使用 `provider: deepseek-official` 时，由 DeepSeek 官方适配器采用其配置的默认值；DSH 默认设置为 `high`。
 
 这样可以让绑定文件只负责 provider/model 路由，不引入第二套模型能力注册表。其他已注册 provider 继续使用各自适配器定义的推理行为。
 
@@ -173,11 +173,11 @@ SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
 插件默认安装以下配置：
 
 ```yaml
-- id: smart-subagent
+- id: evo-subagent
   config:
     bindingsDir: /absolute/path/to/agents
     provider: spawn
-    toolName: smart_subagent
+    toolName: evo_subagent
     maxDepth: 3
 ```
 
@@ -190,7 +190,7 @@ DSH patch 覆盖会替换完整 `config`，自行覆盖时请保留仍需使用�
 - provider/model 严格匹配并区分大小写。
 - 无效绑定不会回退到其他模型路由。
 - 绑定文件不包含任何凭据。
-- 禁用插件只会移除 `smart_subagent`，不会修改官方 `subagent` 工具。
+- 禁用插件只会移除 `evo_subagent`，不会修改官方 `subagent` 工具。
 
 ## 开发与验证
 

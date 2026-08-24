@@ -6,8 +6,10 @@ export const EVOLUTION_OPEN = '[[EVOLUTION]]'
 export const EVOLUTION_CLOSE = '[[/EVOLUTION]]'
 export const MAIN_AGENT_KEY = 'main'
 export const MAIN_AGENT_FILENAME = 'AGENTS.md'
-export const MAIN_AGENT_BLOCK_OPEN = '<!-- smart-subagent:main-evolution:start -->'
-export const MAIN_AGENT_BLOCK_CLOSE = '<!-- smart-subagent:main-evolution:end -->'
+export const MAIN_AGENT_BLOCK_OPEN = '<!-- evo-subagent:main-evolution:start -->'
+export const MAIN_AGENT_BLOCK_CLOSE = '<!-- evo-subagent:main-evolution:end -->'
+const LEGACY_MAIN_AGENT_BLOCK_OPEN = '<!-- smart-subagent:main-evolution:start -->'
+const LEGACY_MAIN_AGENT_BLOCK_CLOSE = '<!-- smart-subagent:main-evolution:end -->'
 export const MAX_PREFERCMD = 40
 export const MAX_MEMORY = 25
 export const MAX_INJECT_CHARS = 6000
@@ -19,17 +21,17 @@ export const MAX_FILE_CHARS = 4000
 /** Default project-scoped evolution directory, derived from the DSH launch
  * working directory (the same base the bindings directory resolves from).
  * Each project/conversation keeps its own evolution files, isolated from the
- * others. Override with SMART_SUBAGENT_EVOLUTION_DIR or `evolutionDir`. */
+ * others. Override with EVO_SUBAGENT_EVOLUTION_DIR or `evolutionDir`. */
 export function defaultEvolutionDir() {
-  return join(process.cwd(), '.smart_subagent', 'evolution')
+  return join(process.cwd(), '.evo_subagent', 'evolution')
 }
 
 export function projectEvolutionDir(projectRoot) {
-  return join(resolve(projectRoot), '.smart_subagent', 'evolution')
+  return join(resolve(projectRoot), '.evo_subagent', 'evolution')
 }
 
 export function legacyProjectEvolutionDir(projectRoot) {
-  return join(resolve(projectRoot), '.dsh', 'smart-subagent', 'evolution')
+  return join(resolve(projectRoot), '.smart_subagent', 'evolution')
 }
 
 function mainAgentBlock(newline = '\n') {
@@ -40,8 +42,8 @@ function mainAgentBlock(newline = '\n') {
     '',
     'At the beginning of relevant work, read (create them if missing):',
     '',
-    '- `.smart_subagent/evolution/main/prefercmd.md`',
-    '- `.smart_subagent/evolution/main/memory.md`',
+    '- `.evo_subagent/evolution/main/prefercmd.md`',
+    '- `.evo_subagent/evolution/main/memory.md`',
     '',
     'Reuse verified commands and lessons when applicable. After completing verified work,',
     'update these files with concise project-specific commands and lessons. Do not record',
@@ -51,15 +53,28 @@ function mainAgentBlock(newline = '\n') {
   ].join(newline)
 }
 
-export function removeMainAgentBlock(text) {
-  const open = text.indexOf(MAIN_AGENT_BLOCK_OPEN)
-  const close = text.indexOf(MAIN_AGENT_BLOCK_CLOSE)
-  if (open === -1 && close === -1) return text
-  if (open === -1 || close < open) {
-    throw new Error('smart-subagent: malformed main-agent evolution block')
+function removeManagedBlocks(text, markerPairs, label) {
+  let output = text
+  let removed = false
+  for (const [openMarker, closeMarker] of markerPairs) {
+    const open = output.indexOf(openMarker)
+    const close = output.indexOf(closeMarker)
+    if (open === -1 && close === -1) continue
+    if (open === -1 || close < open) {
+      throw new Error(`evo-subagent: malformed ${label} block`)
+    }
+    const end = close + closeMarker.length
+    output = (output.slice(0, open).trimEnd() + output.slice(end)).trimEnd()
+    removed = true
   }
-  const end = close + MAIN_AGENT_BLOCK_CLOSE.length
-  return (text.slice(0, open).trimEnd() + text.slice(end)).trimEnd() + (text.endsWith('\n') ? '\n' : '')
+  return removed ? output + (text.endsWith('\n') ? '\n' : '') : text
+}
+
+export function removeMainAgentBlock(text) {
+  return removeManagedBlocks(text, [
+    [MAIN_AGENT_BLOCK_OPEN, MAIN_AGENT_BLOCK_CLOSE],
+    [LEGACY_MAIN_AGENT_BLOCK_OPEN, LEGACY_MAIN_AGENT_BLOCK_CLOSE],
+  ], 'main-agent evolution')
 }
 
 export function addMainAgentBlock(text) {
@@ -68,8 +83,10 @@ export function addMainAgentBlock(text) {
   return clean + newline + newline + mainAgentBlock(newline) + newline
 }
 
-export const EVOLUTION_REPORT_OPEN = '<!-- smart-subagent:evolution-report:start -->'
-export const EVOLUTION_REPORT_CLOSE = '<!-- smart-subagent:evolution-report:end -->'
+export const EVOLUTION_REPORT_OPEN = '<!-- evo-subagent:evolution-report:start -->'
+export const EVOLUTION_REPORT_CLOSE = '<!-- evo-subagent:evolution-report:end -->'
+const LEGACY_EVOLUTION_REPORT_OPEN = '<!-- smart-subagent:evolution-report:start -->'
+const LEGACY_EVOLUTION_REPORT_CLOSE = '<!-- smart-subagent:evolution-report:end -->'
 
 function evolutionReportBlock(newline = '\n') {
   return [
@@ -112,14 +129,10 @@ export function addEvolutionReportBlock(text) {
 /** Remove the evolution-report instruction block from a binding file body.
  * Returns the original text when no block is present. */
 export function removeEvolutionReportBlock(text) {
-  const open = text.indexOf(EVOLUTION_REPORT_OPEN)
-  const close = text.indexOf(EVOLUTION_REPORT_CLOSE)
-  if (open === -1 && close === -1) return text
-  if (open === -1 || close < open) {
-    throw new Error('smart-subagent: malformed evolution-report block')
-  }
-  const end = close + EVOLUTION_REPORT_CLOSE.length
-  return (text.slice(0, open).trimEnd() + text.slice(end)).trimEnd() + (text.endsWith('\n') ? '\n' : '')
+  return removeManagedBlocks(text, [
+    [EVOLUTION_REPORT_OPEN, EVOLUTION_REPORT_CLOSE],
+    [LEGACY_EVOLUTION_REPORT_OPEN, LEGACY_EVOLUTION_REPORT_CLOSE],
+  ], 'evolution-report')
 }
 
 /**
@@ -175,12 +188,12 @@ export async function ensureWorkspaceProvisioned(projectRoot, agentsDir) {
       result.mainAgentBound = true
     }
   } catch (error) {
-    console.error(`[smart-subagent] auto-bind main agent skipped: ${error}`)
+    console.error(`[evo-subagent] auto-bind main agent skipped: ${error}`)
   }
   try {
     result.injected = await ensureAgentReportBlocks(agentsDir)
   } catch (error) {
-    console.error(`[smart-subagent] auto-inject evolution reporting skipped: ${error}`)
+    console.error(`[evo-subagent] auto-inject evolution reporting skipped: ${error}`)
   }
   return result
 }
@@ -194,11 +207,14 @@ export async function readMainAgentConfig(projectRoot) {
     available = false
   }
   let configured = ''
-  try {
-    const config = JSON.parse(await readFile(join(root, '.smart_subagent', 'config.json'), 'utf8'))
-    if (config?.mainAgentFile === MAIN_AGENT_FILENAME) configured = MAIN_AGENT_FILENAME
-  } catch (error) {
-    if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+  for (const directory of ['.evo_subagent', '.smart_subagent']) {
+    try {
+      const config = JSON.parse(await readFile(join(root, directory, 'config.json'), 'utf8'))
+      if (config?.mainAgentFile === MAIN_AGENT_FILENAME) configured = MAIN_AGENT_FILENAME
+      break
+    } catch (error) {
+      if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+    }
   }
   return {
     filename: configured,
@@ -211,7 +227,7 @@ export async function setMainAgentConfig(projectRoot, filename) {
   const root = resolve(projectRoot)
   const next = filename === '' ? '' : String(filename)
   if (next !== '' && next !== MAIN_AGENT_FILENAME) {
-    throw new Error(`smart-subagent: main agent must be the workspace-root ${MAIN_AGENT_FILENAME}`)
+    throw new Error(`evo-subagent: main agent must be the workspace-root ${MAIN_AGENT_FILENAME}`)
   }
   const previous = await readMainAgentConfig(root)
   if (previous.filename !== '') {
@@ -231,7 +247,7 @@ export async function setMainAgentConfig(projectRoot, filename) {
       memory: existing.memory,
     }, legacyEvolutionDir)
   }
-  const configDir = join(root, '.smart_subagent')
+  const configDir = join(root, '.evo_subagent')
   await mkdir(configDir, { recursive: true })
   await writeFile(join(configDir, 'config.json'), JSON.stringify({ mainAgentFile: next }, null, 2) + '\n', 'utf8')
   return readMainAgentConfig(root)
@@ -253,7 +269,7 @@ async function readListFile(filename) {
     return parseItemList(await readFile(filename, 'utf8'))
   } catch (error) {
     if (error?.code === 'ENOENT') return []
-    throw new Error(`smart-subagent: failed to read ${filename}`, { cause: error })
+    throw new Error(`evo-subagent: failed to read ${filename}`, { cause: error })
   }
 }
 
@@ -288,8 +304,8 @@ async function appendListFile(filename, newItems, maxEntries, label) {
   const body = kept.length > 0
     ? kept.map(i => `- ${i}`).join('\n') + '\n'
     : ''
-  const header = `# ${label} — auto-maintained by smart-subagent evolution mode\n`
-    + `# Edit via the smart-subagent settings UI; manual edits are preserved\n\n`
+  const header = `# ${label} — auto-maintained by evo-subagent evolution mode\n`
+    + `# Edit via the evo-subagent settings UI; manual edits are preserved\n\n`
   await mkdir(dirname(filename), { recursive: true })
   await writeFile(filename, header + body, 'utf8')
 }
@@ -413,9 +429,9 @@ function renderInjection(sections, maxChars) {
     else body += e.text + '\n'
   }
   body = body.trimEnd()
-  return '\n\n<!-- smart-subagent evolution: auto-maintained context (bounded) -->\n'
+  return '\n\n<!-- evo-subagent evolution: auto-maintained context (bounded) -->\n'
     + body
-    + '\n<!-- /smart-subagent evolution -->'
+    + '\n<!-- /evo-subagent evolution -->'
 }
 
 /**
@@ -588,7 +604,7 @@ async function readRawFile(filename) {
     return await readFile(filename, 'utf8')
   } catch (error) {
     if (error?.code === 'ENOENT') return ''
-    throw new Error(`smart-subagent: failed to read ${filename}`, { cause: error })
+    throw new Error(`evo-subagent: failed to read ${filename}`, { cause: error })
   }
 }
 
@@ -658,7 +674,7 @@ export async function detectAgents(bindingsDir, templatesDir) {
       entries = await readdir(dir, { withFileTypes: true })
     } catch (error) {
       if (error?.code === 'ENOENT') continue
-      throw new Error(`smart-subagent: failed to list agents in ${dir}`, { cause: error })
+      throw new Error(`evo-subagent: failed to list agents in ${dir}`, { cause: error })
     }
     for (const entry of entries) {
       if (!entry.isFile()) continue

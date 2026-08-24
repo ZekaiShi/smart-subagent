@@ -35,7 +35,7 @@ test('rejects path traversal and unstable agent keys', () => {
 })
 
 test('missing binding means inherit parent; an existing file resolves exactly', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'smart-subagent-'))
+  const dir = await mkdtemp(join(tmpdir(), 'evo-subagent-'))
   assert.equal(await loadBinding(dir, 'missing'), undefined)
   await writeFile(join(dir, 'chapter-writer.md'), '---\nprovider: p\nmodel: m\n---\nrole text', 'utf8')
   const binding = await loadBinding(dir, 'chapter-writer')

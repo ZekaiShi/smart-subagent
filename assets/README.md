@@ -1,7 +1,7 @@
 # assets
 
 Plugin preview images, hosted here so the awesome-dsh-plugin market can link
-them via `raw.githubusercontent.com/ZekaiShi/smart-subagent/main/assets/...`.
+them via `raw.githubusercontent.com/ZekaiShi/evo-subagent/main/assets/...`.
 
 ## 放图指引 / Where generated previews go
 

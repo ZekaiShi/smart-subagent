@@ -33,7 +33,7 @@ function saveRuntimeConfig(evolutionDir, config) {
     mkdirSync(evolutionDir, { recursive: true })
     writeFileSync(join(evolutionDir, 'config.json'), JSON.stringify(config, null, 2), 'utf8')
   } catch (error) {
-    console.error(`[smart-subagent] failed to persist runtime config: ${error}`)
+    console.error(`[evo-subagent] failed to persist runtime config: ${error}`)
   }
 }
 
@@ -102,9 +102,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   }
 
   webServer.register({
-    name: 'smart-subagent-agents',
+    name: 'evo-subagent-agents',
     kind: 'exact',
-    path: '/smart-subagent/agents',
+    path: '/evo-subagent/agents',
     handler: async (req, res) => {
       try {
         const agents = await detectAgents(bindingsDir, templatesDir)
@@ -116,9 +116,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   })
 
   webServer.register({
-    name: 'smart-subagent-projects',
+    name: 'evo-subagent-projects',
     kind: 'exact',
-    path: '/smart-subagent/projects',
+    path: '/evo-subagent/projects',
     handler: async (req, res) => {
       try {
         // Universal scan source: the profile's registered workspaces
@@ -191,7 +191,7 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
             try {
               await ensureWorkspaceProvisioned(project.projectRoot, project.agentsDir)
             } catch (error) {
-              console.error(`[smart-subagent] workspace provisioning skipped: ${error}`)
+              console.error(`[evo-subagent] workspace provisioning skipped: ${error}`)
             }
           }
           // Only the workspace's own binding agents: built-in templates are
@@ -250,9 +250,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   })
 
   webServer.register({
-    name: 'smart-subagent-main-agent',
+    name: 'evo-subagent-main-agent',
     kind: 'exact',
-    path: '/smart-subagent/main-agent',
+    path: '/evo-subagent/main-agent',
     handler: async (req, res) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, error(new Error('use POST')))
@@ -272,9 +272,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   })
 
   webServer.register({
-    name: 'smart-subagent-template-add',
+    name: 'evo-subagent-template-add',
     kind: 'exact',
-    path: '/smart-subagent/template/add',
+    path: '/evo-subagent/template/add',
     handler: async (req, res) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, error(new Error('use POST')))
@@ -304,9 +304,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   })
 
   webServer.register({
-    name: 'smart-subagent-model',
+    name: 'evo-subagent-model',
     kind: 'exact',
-    path: '/smart-subagent/model',
+    path: '/evo-subagent/model',
     handler: async (req, res) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, error(new Error('use POST')))
@@ -332,9 +332,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   })
 
   webServer.register({
-    name: 'smart-subagent-evolution-read',
+    name: 'evo-subagent-evolution-read',
     kind: 'exact',
-    path: '/smart-subagent/evolution/read',
+    path: '/evo-subagent/evolution/read',
     handler: async (req, res) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, error(new Error('use POST')))
@@ -352,9 +352,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   })
 
   webServer.register({
-    name: 'smart-subagent-evolution-save',
+    name: 'evo-subagent-evolution-save',
     kind: 'exact',
-    path: '/smart-subagent/evolution/save',
+    path: '/evo-subagent/evolution/save',
     handler: async (req, res) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, error(new Error('use POST')))
@@ -376,9 +376,9 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
   })
 
   webServer.register({
-    name: 'smart-subagent-config',
+    name: 'evo-subagent-config',
     kind: 'exact',
-    path: '/smart-subagent/config',
+    path: '/evo-subagent/config',
     handler: async (req, res) => {
       if (req.method !== 'POST') {
         sendJson(res, 405, error(new Error('use POST')))
@@ -412,7 +412,7 @@ function registerEvolutionWeb(webServer, { bindingsDir, templatesDir, evolutionD
 
 function nonEmpty(value, field) {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`smart-subagent: ${field} must be a non-empty string`)
+    throw new Error(`evo-subagent: ${field} must be a non-empty string`)
   }
   return value
 }
@@ -441,12 +441,12 @@ async function settleForeground(run) {
   try {
     await run.dispose()
   } catch (error) {
-    throw new Error('smart-subagent: subagent disposal failed', { cause: error })
+    throw new Error('evo-subagent: subagent disposal failed', { cause: error })
   }
   if (execution.stopReason !== 'completed') {
     const partial = partialText(execution.output)
     throw new Error(
-      `smart-subagent: subagent stopped with ${execution.stopReason}`
+      `evo-subagent: subagent stopped with ${execution.stopReason}`
       + (partial.length === 0 ? '' : `\nPartial output before the run ended:\n${partial}`),
     )
   }
@@ -475,25 +475,25 @@ async function settleForegroundAndRecord(run, agentKey, { evolution, evolutionDi
 export function createApply(defineTool) {
   return function apply(ctx, config = {}) {
     const bindingsDir = resolve(
-      config.bindingsDir ?? process.env.SMART_SUBAGENT_BINDINGS_DIR ?? process.env.DSH_AGENT_BINDINGS_DIR ?? 'agents',
+      config.bindingsDir ?? process.env.EVO_SUBAGENT_BINDINGS_DIR ?? process.env.DSH_AGENT_BINDINGS_DIR ?? 'agents',
     )
     const templatesDir = resolve(config.templatesDir ?? fileURLToPath(new URL('./templates/', import.meta.url)))
     const provider = config.provider ?? 'spawn'
-    const toolName = config.toolName ?? 'smart_subagent'
+    const toolName = config.toolName ?? 'evo_subagent'
     const maxDepth = config.maxDepth ?? 3
     if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) {
-      throw new Error('smart-subagent: maxDepth must be a non-negative safe integer')
+      throw new Error('evo-subagent: maxDepth must be a non-negative safe integer')
     }
     const evolutionDir = config.evolutionDir
       ? resolve(config.evolutionDir)
-      : (process.env.SMART_SUBAGENT_EVOLUTION_DIR
-        ? resolve(process.env.SMART_SUBAGENT_EVOLUTION_DIR)
+      : (process.env.EVO_SUBAGENT_EVOLUTION_DIR
+        ? resolve(process.env.EVO_SUBAGENT_EVOLUTION_DIR)
         : defaultEvolutionDir())
     // Fallback directory scanned by the settings card when the profile has no
     // registered workspaces. Empty/undefined means pure workspace
     // auto-detection. Precedence: explicit config > env
-    // SMART_SUBAGENT_PROJECTS_DIR > persisted <evolutionDir>/config.json.
-    const legacyRuntimeConfig = config.evolutionDir || process.env.SMART_SUBAGENT_EVOLUTION_DIR
+    // EVO_SUBAGENT_PROJECTS_DIR > persisted <evolutionDir>/config.json.
+    const legacyRuntimeConfig = config.evolutionDir || process.env.EVO_SUBAGENT_EVOLUTION_DIR
       ? {}
       : loadRuntimeConfig(legacyProjectEvolutionDir(process.cwd()))
     const persistedConfig = {
@@ -502,8 +502,8 @@ export function createApply(defineTool) {
     }
     const projectsBaseDir = config.projectsBaseDir
       ? resolve(config.projectsBaseDir)
-      : (process.env.SMART_SUBAGENT_PROJECTS_DIR
-        ? resolve(process.env.SMART_SUBAGENT_PROJECTS_DIR)
+      : (process.env.EVO_SUBAGENT_PROJECTS_DIR
+        ? resolve(process.env.EVO_SUBAGENT_PROJECTS_DIR)
         : (typeof persistedConfig.projectsBaseDir === 'string' && persistedConfig.projectsBaseDir.length > 0
           ? resolve(persistedConfig.projectsBaseDir)
           : undefined))
@@ -519,7 +519,7 @@ export function createApply(defineTool) {
     // Runtime state: `evolution` can be flipped by the settings card and
     // persists to <evolutionDir>/config.json. A hard config/env disable still
     // wins over the persisted toggle.
-    const hardDisabled = config.evolution === false || process.env.SMART_SUBAGENT_EVOLUTION === 'false'
+    const hardDisabled = config.evolution === false || process.env.EVO_SUBAGENT_EVOLUTION === 'false'
     const state = {
       evolution: hardDisabled ? false : (typeof persistedConfig.evolution === 'boolean' ? persistedConfig.evolution : true),
     }
@@ -537,11 +537,11 @@ export function createApply(defineTool) {
           try {
             runtime.workspaceRegistry = service?.workspaceRegistry
           } catch (error) {
-            console.error(`[smart-subagent] workspace registry read failed: ${error}`)
+            console.error(`[evo-subagent] workspace registry read failed: ${error}`)
           }
         })
       } catch (error) {
-        console.error(`[smart-subagent] workspace registry hook skipped: ${error}`)
+        console.error(`[evo-subagent] workspace registry hook skipped: ${error}`)
       }
       ctx.inject(['webServer'], (browser) => {
         try {
@@ -555,7 +555,7 @@ export function createApply(defineTool) {
             llm: ctx.llm,
           })
         } catch (error) {
-          console.error(`[smart-subagent] settings web routes skipped: ${error}`)
+          console.error(`[evo-subagent] settings web routes skipped: ${error}`)
         }
       })
       ctx.inject(['settings'], (service) => {
@@ -565,9 +565,9 @@ export function createApply(defineTool) {
             uid: 0,
             refs: { 0: { type: 'object', meta: { default: {} }, dict: {} } },
           })
-          service.settings.register('smart-subagent', passThrough, { base: {} })
+          service.settings.register('evo-subagent', passThrough, { base: {} })
         } catch (error) {
-          console.error(`[smart-subagent] settings namespace skipped: ${error}`)
+          console.error(`[evo-subagent] settings namespace skipped: ${error}`)
         }
       })
     }
@@ -625,7 +625,7 @@ export function createApply(defineTool) {
       isConcurrencySafe: () => true,
       async execute(args, exec) {
         const parent = exec.agent
-        if (parent === undefined) throw new Error('smart-subagent: an initiating agent is required')
+        if (parent === undefined) throw new Error('evo-subagent: an initiating agent is required')
         // Per-conversation scope: detect the conversation's project workspace
         // (session cwd → project root → <root>/agents) so subagent routing and
         // evolution follow the project the conversation is working in, not the
@@ -643,7 +643,7 @@ export function createApply(defineTool) {
           try {
             await ensureWorkspaceProvisioned(sessionScope.projectRoot, sessionScope.bindingsDir)
           } catch (error) {
-            console.error(`[smart-subagent] workspace provisioning skipped: ${error}`)
+            console.error(`[evo-subagent] workspace provisioning skipped: ${error}`)
           }
         }
         const agentKey = assertAgentKey(args.agent_key)

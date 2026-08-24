@@ -1,4 +1,4 @@
-// Browser half of the smart-subagent dsh plugin: the Evolution settings card.
+// Browser half of the evo-subagent dsh plugin: the Evolution settings card.
 //
 // Renders a plugin card in Settings -> Plugins (the settings.plugin.item
 // slot). The card groups every detected subagent by project workspace, shows
@@ -11,13 +11,13 @@
 // exports), so no build step and no dsh client imports — the same
 // zero-dependency stance as the modlens card it was modelled on.
 window.__ModuleLoader__.load({
-  id: 'smart-subagent',
+  id: 'evo-subagent',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports
 
     var EN = {
-      title: 'smart-subagent',
+      title: 'evo-subagent',
       subtitle: 'Evolution mode · subagents grouped by workspace · model dropdown',
       scope: 'Scope',
       scopeBindings: 'Bindings',
@@ -65,7 +65,7 @@ window.__ModuleLoader__.load({
       open: 'Open',
     }
     var ZH = {
-      title: 'smart-subagent',
+      title: 'evo-subagent',
       subtitle: '进化模式 · 按工作区分组的 subagents · 模型下拉',
       scope: '作用域',
       scopeBindings: '绑定目录',
@@ -228,7 +228,7 @@ window.__ModuleLoader__.load({
         var setTargetWorkspace = targetWorkspaceState[1]
 
         var load = react.useCallback(() => {
-          fetch('/smart-subagent/projects')
+          fetch('/evo-subagent/projects')
             .then((r) => r.json().then((body) => (r.ok ? body : Promise.reject(new Error(body.error || '')))))
             .then((next) => {
               summaryState[1](next)
@@ -255,7 +255,7 @@ window.__ModuleLoader__.load({
           // card to pure workspace auto-detection.
           var value = scanDir.trim()
           noteState[1](t.saving)
-          fetch('/smart-subagent/config', {
+          fetch('/evo-subagent/config', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ projectsBaseDir: value }),
@@ -272,7 +272,7 @@ window.__ModuleLoader__.load({
         var toggle = (value) => {
           var next = { ...(summary || {}), evolution: value }
           summaryState[1](next)
-          fetch('/smart-subagent/config', {
+          fetch('/evo-subagent/config', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ evolution: value }),
@@ -285,7 +285,7 @@ window.__ModuleLoader__.load({
         // POST a provider/model route change and keep a local draft of the
         // selection so the two dropdowns stay consistent while saving.
         var postModel = (projectRoot, agentKey, provider, model) => {
-          fetch('/smart-subagent/model', {
+          fetch('/evo-subagent/model', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ projectRoot, agentKey, provider, model }),
@@ -314,7 +314,7 @@ window.__ModuleLoader__.load({
         var addTemplate = (projectRoot, agentKey) => {
           if (!projectRoot) return
           noteState[1](t.saving)
-          fetch('/smart-subagent/template/add', {
+          fetch('/evo-subagent/template/add', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ projectRoot, agentKey }),
@@ -326,7 +326,7 @@ window.__ModuleLoader__.load({
 
         var setMainAgent = (projectRoot, filename) => {
           noteState[1](t.saving)
-          fetch('/smart-subagent/main-agent', {
+          fetch('/evo-subagent/main-agent', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ projectRoot, filename }),
@@ -340,7 +340,7 @@ window.__ModuleLoader__.load({
           var id = editorId || (projectRoot + '::' + agentKey)
           var set = setEditors
           set((prev) => ({ ...prev, [id]: { ...prev[id], loading: true } }))
-          fetch('/smart-subagent/evolution/read', {
+          fetch('/evo-subagent/evolution/read', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ projectRoot, agentKey }),
@@ -373,7 +373,7 @@ window.__ModuleLoader__.load({
           var entry = editors[id]
           if (!entry) return
           setEditors((prev) => ({ ...prev, [id]: { ...prev[id], note: t.saving } }))
-          fetch('/smart-subagent/evolution/save', {
+          fetch('/evo-subagent/evolution/save', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ projectRoot, agentKey, prefercmd: entry.prefercmd, memory: entry.memory }),
@@ -1067,19 +1067,19 @@ window.__ModuleLoader__.load({
       ctx.inject(['locale'], (scope) => {
         localeRef.current = scope.locale
         if (typeof scope.effect === 'function') {
-          scope.effect(() => () => { localeRef.current = null }, 'smart-subagent: locale handle')
+          scope.effect(() => () => { localeRef.current = null }, 'evo-subagent: locale handle')
         }
       })
       ctx.inject(['slots'], (scope) => {
         // The card and its host routes live and die together: any response
         // proves the route exists; only a 404 means no web profile.
-        fetch('/smart-subagent/projects')
+        fetch('/evo-subagent/projects')
           .then((response) => {
             if (response.status === 404) return
             try {
               mountCard(scope, localeRef)
             } catch (error) {
-              console.error(`[smart-subagent] settings card skipped: ${error}`)
+              console.error(`[evo-subagent] settings card skipped: ${error}`)
             }
           })
           .catch(() => {})
@@ -1091,12 +1091,12 @@ window.__ModuleLoader__.load({
       try {
         react = require('react')
       } catch (error) {
-        console.error(`[smart-subagent] settings card skipped: ${error}`)
+        console.error(`[evo-subagent] settings card skipped: ${error}`)
         return
       }
       var Card = CardFactory(react, localeRef)
       ctx.slots.inject('settings.plugin.item', function* () {
-        yield ctx.slots.register({ name: 'settings.plugin.item', id: 'smart-subagent', key: 'smart-subagent', order: 31 }, Card)
+        yield ctx.slots.register({ name: 'settings.plugin.item', id: 'evo-subagent', key: 'evo-subagent', order: 31 }, Card)
       })
     }
 

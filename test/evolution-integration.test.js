@@ -45,7 +45,7 @@ async function buildHarness({ evolution = true, foregroundOutput = 'done' } = {}
     bindingsDir,
     templatesDir,
     provider: 'spawn',
-    toolName: 'smart_subagent',
+    toolName: 'evo_subagent',
     maxDepth: 3,
     evolution,
     evolutionDir,
@@ -64,7 +64,7 @@ test('evolution enabled: foreground prompt gets injection block when files exist
   }, exec)
   const text = h.starts[0].request.prompt[0].text
   assert.match(text, /review this/)
-  assert.match(text, /smart-subagent evolution/)
+  assert.match(text, /evo-subagent evolution/)
   assert.match(text, /ls -la/)
   assert.match(text, /run lint first/)
 })
@@ -75,7 +75,7 @@ test('evolution enabled: no injection when both files are empty', async () => {
     agent_key: 'code-reviewer', description: 'review', prompt: 'review this', run_in_background: false,
   }, exec)
   const text = h.starts[0].request.prompt[0].text
-  assert.equal(text.includes('smart-subagent evolution'), false)
+  assert.equal(text.includes('evo-subagent evolution'), false)
   assert.equal(text, 'review this')
 })
 
@@ -88,7 +88,7 @@ test('evolution disabled: no injection even when files exist', async () => {
     agent_key: 'code-reviewer', description: 'review', prompt: 'review this', run_in_background: false,
   }, exec)
   const text = h.starts[0].request.prompt[0].text
-  assert.equal(text.includes('smart-subagent evolution'), false)
+  assert.equal(text.includes('evo-subagent evolution'), false)
   assert.equal(text, 'review this')
 })
 
@@ -162,7 +162,7 @@ memory:
   assert.deepEqual(memory, ['inherited agent can use pnpm'])
 })
 
-test('settings route /smart-subagent/agents returns project scope', async () => {
+test('settings route /evo-subagent/agents returns project scope', async () => {
   const bindingsDir = await mkdtemp(join(tmpdir(), 'smart-sub-scope-bind-'))
   const evolutionDir = await mkdtemp(join(tmpdir(), 'smart-sub-scope-evo-'))
   const routes = new Map()
@@ -181,7 +181,7 @@ test('settings route /smart-subagent/agents returns project scope', async () => 
   createApply(v => v)(ctx, {
     bindingsDir, templatesDir, evolution: true, evolutionDir, maxDepth: 3,
   })
-  const route = routes.get('/smart-subagent/agents')
+  const route = routes.get('/evo-subagent/agents')
   assert.ok(route, 'agents route registered')
   let captured
   const res = {
@@ -195,7 +195,7 @@ test('settings route /smart-subagent/agents returns project scope', async () => 
   assert.equal(captured.scope.evolutionDir, evolutionDir)
 })
 
-test('settings route /smart-subagent/projects groups agents by project with model info', async () => {
+test('settings route /evo-subagent/projects groups agents by project with model info', async () => {
   const base = await mkdtemp(join(tmpdir(), 'smart-sub-projbase-'))
   const agentsDir = join(base, 'proj-x', 'agents')
   await mkdir(agentsDir, { recursive: true })
@@ -223,7 +223,7 @@ test('settings route /smart-subagent/projects groups agents by project with mode
   createApply(v => v)(ctx, {
     bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: join(base, 'proj-x'), maxDepth: 3,
   })
-  const route = routes.get('/smart-subagent/projects')
+  const route = routes.get('/evo-subagent/projects')
   assert.ok(route, 'projects route registered')
   let captured
   const res = {
@@ -258,7 +258,7 @@ test('settings route /smart-subagent/projects groups agents by project with mode
   assert.equal(captured.scope.scanSource, 'manual')
 })
 
-test('settings route /smart-subagent/projects scans registered workspaces', async () => {
+test('settings route /evo-subagent/projects scans registered workspaces', async () => {
   const base = await mkdtemp(join(tmpdir(), 'smart-sub-ws-'))
   // ws-1 IS the project itself (agents/ directly under the workspace root).
   await mkdir(join(base, 'ws-project', 'agents'), { recursive: true })
@@ -293,7 +293,7 @@ test('settings route /smart-subagent/projects scans registered workspaces', asyn
   createApply(v => v)(ctx, {
     bindingsDir: join(base, 'ws-project', 'agents'), templatesDir, evolution: true, maxDepth: 3,
   })
-  const route = routes.get('/smart-subagent/projects')
+  const route = routes.get('/evo-subagent/projects')
   assert.ok(route, 'projects route registered')
   let captured
   const res = {
@@ -315,7 +315,7 @@ test('settings route /smart-subagent/projects scans registered workspaces', asyn
   assert.deepEqual(captured.projects[1].mainAgent.candidates, ['AGENTS.md'])
 })
 
-test('settings route binds one workspace Main agent and stores its evolution under .smart_subagent', async () => {
+test('settings route binds one workspace Main agent and stores its evolution under .evo_subagent', async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), 'smart-sub-main-agent-'))
   const agentsText = '# Project instructions\n\nKeep this rule.\n'
   await writeFile(join(projectRoot, 'AGENTS.md'), agentsText, 'utf8')
@@ -342,19 +342,19 @@ test('settings route binds one workspace Main agent and stores its evolution und
     return { status: res.status, body: captured }
   }
 
-  const bound = await post('/smart-subagent/main-agent', { projectRoot, filename: 'AGENTS.md' })
+  const bound = await post('/evo-subagent/main-agent', { projectRoot, filename: 'AGENTS.md' })
   assert.equal(bound.status, 200)
   assert.equal(bound.body.mainAgent.filename, 'AGENTS.md')
-  assert.match(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), /smart-subagent:main-evolution:start/)
+  assert.match(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), /evo-subagent:main-evolution:start/)
 
-  const saved = await post('/smart-subagent/evolution/save', {
+  const saved = await post('/evo-subagent/evolution/save', {
     projectRoot, agentKey: 'main', prefercmd: '- pnpm test\n', memory: '- keep prompts bounded\n',
   })
   assert.equal(saved.status, 200)
-  assert.equal(await readFile(join(projectRoot, '.smart_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '- pnpm test\n')
-  assert.equal(await readFile(join(projectRoot, '.smart_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '- keep prompts bounded\n')
+  assert.equal(await readFile(join(projectRoot, '.evo_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '- pnpm test\n')
+  assert.equal(await readFile(join(projectRoot, '.evo_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '- keep prompts bounded\n')
 
-  const unbound = await post('/smart-subagent/main-agent', { projectRoot, filename: '' })
+  const unbound = await post('/evo-subagent/main-agent', { projectRoot, filename: '' })
   assert.equal(unbound.status, 200)
   assert.equal(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), agentsText)
 })
@@ -388,27 +388,27 @@ test('settings route adds a complete built-in template to a registered workspace
     return { status: res.status, body: captured }
   }
 
-  const added = await post('/smart-subagent/template/add', { projectRoot, agentKey: 'code-reviewer' })
+  const added = await post('/evo-subagent/template/add', { projectRoot, agentKey: 'code-reviewer' })
   assert.equal(added.status, 200)
   const copied = await readFile(join(projectRoot, 'agents', 'code-reviewer.md'), 'utf8')
   const original = await readFile(join(templatesDir, 'code-reviewer.md'), 'utf8')
   assert.equal(copied, original)
 
-  const listed = await post('/smart-subagent/projects', {})
+  const listed = await post('/evo-subagent/projects', {})
   const reviewer = listed.body.projects[0].agents.find((agent) => agent.agentKey === 'code-reviewer')
   assert.equal(reviewer.source, 'both')
   assert.equal(reviewer.editable, true)
 
-  const duplicate = await post('/smart-subagent/template/add', { projectRoot, agentKey: 'code-reviewer' })
+  const duplicate = await post('/evo-subagent/template/add', { projectRoot, agentKey: 'code-reviewer' })
   assert.equal(duplicate.status, 500)
   // Not overwritten back to the bare template: the /projects scan has already
   // auto-injected the evolution-report block into the copied binding, and the
   // duplicate add must not clobber it.
   const after = await readFile(join(projectRoot, 'agents', 'code-reviewer.md'), 'utf8')
-  assert.match(after, /smart-subagent:evolution-report:start/)
+  assert.match(after, /evo-subagent:evolution-report:start/)
 })
 
-test('settings route /smart-subagent/projects reports none when nothing is configured', async () => {
+test('settings route /evo-subagent/projects reports none when nothing is configured', async () => {
   const routes = new Map()
   const webServer = { register(route) { routes.set(route.path, route) } }
   const settings = { register() {} }
@@ -421,7 +421,7 @@ test('settings route /smart-subagent/projects reports none when nothing is confi
     bindingsDir: join(tmpdir(), 'smart-sub-none-'), templatesDir, evolution: true,
     evolutionDir: await mkdtemp(join(tmpdir(), 'smart-sub-none-evo-')), maxDepth: 3,
   })
-  const route = routes.get('/smart-subagent/projects')
+  const route = routes.get('/evo-subagent/projects')
   let captured
   const res = {
     writeHead(status) { this.status = status },
@@ -436,7 +436,7 @@ test('settings route /smart-subagent/projects reports none when nothing is confi
   assert.equal(captured.builtin.length, 3)
 })
 
-test('settings route /smart-subagent/config updates the project scan dir and /projects rescans', async () => {
+test('settings route /evo-subagent/config updates the project scan dir and /projects rescans', async () => {
   const baseA = await mkdtemp(join(tmpdir(), 'smart-sub-cfgA-'))
   const baseB = await mkdtemp(join(tmpdir(), 'smart-sub-cfgB-'))
   await mkdir(join(baseA, 'proj-a', 'agents'), { recursive: true })
@@ -467,16 +467,16 @@ test('settings route /smart-subagent/config updates the project scan dir and /pr
     const res = { writeHead(status) { this.status = status }, end(body) { captured = JSON.parse(body) } }
     return routes.get(path).handler(req, res).then(() => captured)
   }
-  const before = await post('/smart-subagent/projects', {})
+  const before = await post('/evo-subagent/projects', {})
   assert.deepEqual(before.projects.map((p) => p.projectName), ['proj-a'])
-  const cfg = await post('/smart-subagent/config', { projectsBaseDir: join(baseB, 'proj-b') })
+  const cfg = await post('/evo-subagent/config', { projectsBaseDir: join(baseB, 'proj-b') })
   assert.equal(cfg.projectsBaseDir, join(baseB, 'proj-b'))
-  const after = await post('/smart-subagent/projects', {})
+  const after = await post('/evo-subagent/projects', {})
   assert.deepEqual(after.projects.map((p) => p.projectName), ['proj-b'])
   assert.equal(after.scope.projectsBaseDir, join(baseB, 'proj-b'))
 })
 
-test('settings route /smart-subagent/model rewrites the binding front matter', async () => {
+test('settings route /evo-subagent/model rewrites the binding front matter', async () => {
   const base = await mkdtemp(join(tmpdir(), 'smart-sub-modelbase-'))
   const agentsDir = join(base, 'proj-m', 'agents')
   await mkdir(agentsDir, { recursive: true })
@@ -497,7 +497,7 @@ test('settings route /smart-subagent/model rewrites the binding front matter', a
   createApply(v => v)(ctx, {
     bindingsDir: agentsDir, templatesDir, evolution: true, projectsBaseDir: join(base, 'proj-m'), maxDepth: 3,
   })
-  const route = routes.get('/smart-subagent/model')
+  const route = routes.get('/evo-subagent/model')
   assert.ok(route, 'model route registered')
   let captured
   const res = {
@@ -574,10 +574,10 @@ test('execute auto-provisions a bound workspace on first use', async () => {
 
   // Main agent was auto-bound to the workspace AGENTS.md.
   const agentsMd = await readFile(join(projectRoot, 'AGENTS.md'), 'utf8')
-  assert.match(agentsMd, /smart-subagent:main-evolution:start/)
+  assert.match(agentsMd, /evo-subagent:main-evolution:start/)
   // The binding file was auto-injected with the reporting instruction.
   const writer = await readFile(join(agentsDir, 'writer.md'), 'utf8')
-  assert.match(writer, /smart-subagent:evolution-report:start/)
+  assert.match(writer, /evo-subagent:evolution-report:start/)
 })
 
 test('execute auto-provisioning is skipped when evolution is disabled', async () => {
@@ -622,8 +622,8 @@ test('execute auto-provisioning is skipped when evolution is disabled', async ()
     agent_key: 'writer', description: 'write', prompt: 'write the chapter', run_in_background: false,
   }, sessionExec)
 
-  assert.doesNotMatch(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), /smart-subagent:main-evolution:start/)
-  assert.doesNotMatch(await readFile(join(agentsDir, 'writer.md'), 'utf8'), /smart-subagent:evolution-report:start/)
+  assert.doesNotMatch(await readFile(join(projectRoot, 'AGENTS.md'), 'utf8'), /evo-subagent:main-evolution:start/)
+  assert.doesNotMatch(await readFile(join(agentsDir, 'writer.md'), 'utf8'), /evo-subagent:evolution-report:start/)
 })
 
 test('execute uses the conversation workspace scope for bindings + evolution', async () => {

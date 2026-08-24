@@ -1,14 +1,14 @@
-# smart-subagent
+# evo-subagent
 
-![smart-subagent — Route. Remember. Evolve.](assets/Smart-subagent-image-abstract.png)
+![evo-subagent — Route. Remember. Evolve.](assets/Smart-subagent-image-abstract.png)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![npm version](https://img.shields.io/npm/v/smart-subagent.svg)](https://www.npmjs.com/package/smart-subagent)
-[![license](https://img.shields.io/npm/l/smart-subagent.svg)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/evo-subagent.svg)](https://www.npmjs.com/package/evo-subagent)
+[![license](https://img.shields.io/npm/l/evo-subagent.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
 
-`smart-subagent` is a lightweight plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It pulls together three capabilities that today live scattered across separate plugins — **role-based subagent routing**, **per-agent evolution** (verified commands + lessons), and **a knowledge allow/deny list** — so repeated tasks start from what already works instead of rediscovering it: fewer retries, fewer re-debugged bugs, fewer tokens.
+`evo-subagent` is a lightweight plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It pulls together three capabilities that today live scattered across separate plugins — **role-based subagent routing**, **per-agent evolution** (verified commands + lessons), and **a knowledge allow/deny list** — so repeated tasks start from what already works instead of rediscovering it: fewer retries, fewer re-debugged bugs, fewer tokens.
 
 ### Routing
 
@@ -20,7 +20,7 @@ The plugin continuously maintains `prefercmd` (verified commands) and `memory` (
 
 ### Zero-config, project-scoped
 
-Bindings and evolution are isolated per project workspace (`.smart_subagent/` under the nearest folder owning an `agents/` directory), with official built-in role templates that work out of the box. Nothing depends on where DSH was launched, and the plugin stores no API keys, endpoints, credentials, or provider definitions.
+Bindings and evolution are isolated per project workspace (`.evo_subagent/` under the nearest folder owning an `agents/` directory), with official built-in role templates that work out of the box. Nothing depends on where DSH was launched, and the plugin stores no API keys, endpoints, credentials, or provider definitions.
 
 ## Features
 
@@ -38,19 +38,19 @@ Bindings and evolution are isolated per project workspace (`.smart_subagent/` un
 Install the published npm package into a DSH profile:
 
 ```sh
-dsh plugin add smart-subagent
+dsh plugin add evo-subagent
 ```
 
 Install directly from GitHub:
 
 ```sh
-dsh plugin add github:ZekaiShi/smart-subagent
+dsh plugin add github:ZekaiShi/evo-subagent
 ```
 
 For local development:
 
 ```sh
-dsh plugin add ./smart-subagent
+dsh plugin add ./evo-subagent
 ```
 
 Add `--profile <name>` to target a non-default profile.
@@ -95,8 +95,8 @@ same name, using its `provider`/`model` route and its role instructions.
 | `researcher` | Evidence-backed investigation with cited sources | facts vs. inferences, confidence |
 | `wps-worker` | Office-document producer via the Python trio | python-pptx / python-docx / openpyxl; **confirms before writing files** |
 
-Official roles are written with a `name(smart-subagent)` suffix — e.g.
-`code-reviewer(smart-subagent)` — to mark them as built-in and distinguish them
+Official roles are written with a `name(evo-subagent)` suffix — e.g.
+`code-reviewer(evo-subagent)` — to mark them as built-in and distinguish them
 from your own custom bindings. You can use the suffix anywhere the official
 source matters (docs, prompts, conversation); the plugin matches on the bare
 `agent_key` stem.
@@ -150,24 +150,24 @@ so a subagent never re-derives a command or re-debugs a known failure.
   over `ctx.llm`) for semantic summaries.
 
 - **Default: on.** Disable with `evolution: false` in the plugin config or the
-  `SMART_SUBAGENT_EVOLUTION=false` environment variable.
+  `EVO_SUBAGENT_EVOLUTION=false` environment variable.
 - **Per-conversation workspace, not the launch directory.** Each time the
-  `smart_subagent` tool runs, the plugin reads the conversation's working
+  `evo_subagent` tool runs, the plugin reads the conversation's working
   directory (`exec.agent.session.header.cwd`, the same field the DSH shell tool
   resolves its workdir from) and walks up to the nearest folder that owns an
   `agents/` directory — the project workspace. That folder becomes the bindings
   directory and evolution lives under
-  `<project>/.smart_subagent/evolution/<agent_key>/prefercmd.md` and
+  `<project>/.evo_subagent/evolution/<agent_key>/prefercmd.md` and
   `memory.md`. Different projects therefore never share subagent bindings or
   evolution state, and nothing depends on where the DSH process was launched.
   When a conversation has no session cwd or its workspace has no `agents/`
-  folder, the plugin falls back to `bindingsDir` / `SMART_SUBAGENT_EVOLUTION_DIR`
+  folder, the plugin falls back to `bindingsDir` / `EVO_SUBAGENT_EVOLUTION_DIR`
   / the process working directory. The evolution files never appear in the
-  project's `agents/` folder. The `<project>/.smart_subagent/` directory is created
+  project's `agents/` folder. The `<project>/.evo_subagent/` directory is created
   lazily: it only lands on disk when a subagent actually runs and reports
   evolution content (or when you save manually from the settings card) -
   workspace scanning and project detection are strictly read-only. Existing
-  `.dsh/smart-subagent/evolution` data remains a read-only fallback and is
+  former `.smart_subagent/evolution` data remains a read-only fallback and is
   copied into the new location on the first save; legacy files are never
   deleted automatically.
 - On each foreground run the plugin injects the two files as a bounded context
@@ -189,12 +189,12 @@ so a subagent never re-derives a command or re-debugs a known failure.
   the oldest entries are dropped first, so injection cost stays bounded.
 - Background runs don't record (no final output is available to the caller).
 
-Use `detectAgents(bindingsDir, templatesDir)` from `smart-subagent/evolution`
+Use `detectAgents(bindingsDir, templatesDir)` from `evo-subagent/evolution`
 to list all available agent keys programmatically.
 
 ## Settings card
 
-Under the web profile, Settings → Plugins shows a **smart-subagent** card that:
+Under the web profile, Settings → Plugins shows an **evo-subagent** card that:
 
 - **Groups subagents by project.** The scan source is the profile's
   registered **workspaces** (`ctx.workspaceRegistry` - the same workspaces the
@@ -204,12 +204,12 @@ Under the web profile, Settings → Plugins shows a **smart-subagent** card that
   workspaces and the card follows automatically; if nothing is found it says
   so explicitly. Built-in templates are maintained as their own separate
   group and never mixed into a project. Only when a profile has no registered workspaces does it
-  fall back to `SMART_SUBAGENT_PROJECTS_DIR` or a fallback dir set in the
+  fall back to `EVO_SUBAGENT_PROJECTS_DIR` or a fallback dir set in the
   card.
 - **Shows one fixed Main agent row per workspace.** Only the workspace-root
   `AGENTS.md` can be bound. Binding adds one reversible, marker-delimited
-  instruction block and stores the selection in `.smart_subagent/config.json`.
-  The main agent maintains its own `.smart_subagent/evolution/main/prefercmd.md`
+  instruction block and stores the selection in `.evo_subagent/config.json`.
+  The main agent maintains its own `.evo_subagent/evolution/main/prefercmd.md`
   and `memory.md`; unbinding removes only the managed block. Workspaces without
   an `agents/` directory still appear so their Main agent can be configured.
 - **Shows each agent's routing model** (provider · model from its front matter)
@@ -230,21 +230,21 @@ launch DSH from. Relative paths resolve from the DSH launch working directory.
 PowerShell:
 
 ```powershell
-$env:SMART_SUBAGENT_BINDINGS_DIR = 'C:\path\to\agents'
+$env:EVO_SUBAGENT_BINDINGS_DIR = 'C:\path\to\agents'
 dsh   # or however you normally start DSH (dsh web, desktop app, ...)
 ```
 
 Bash:
 
 ```sh
-SMART_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
+EVO_SUBAGENT_BINDINGS_DIR=/absolute/path/to/agents dsh
 ```
 
 `DSH_AGENT_BINDINGS_DIR` remains available as a compatibility fallback.
 
 ## Tool interface
 
-The plugin registers `smart_subagent` by default.
+The plugin registers `evo_subagent` by default.
 
 | Field | Required | Description |
 | --- | --- | --- |
@@ -283,7 +283,7 @@ does not inherit the parent's tool restrictions or authority.
 
 ## DeepSeek reasoning effort
 
-`smart-subagent` does not override `reasoningEffort`. With `provider: deepseek-official`, the official DeepSeek adapter uses its configured default; the default DSH setting is `high`.
+`evo-subagent` does not override `reasoningEffort`. With `provider: deepseek-official`, the official DeepSeek adapter uses its configured default; the default DSH setting is `high`.
 
 This keeps role files focused on provider/model routing and avoids introducing a second model-capability registry. Other registered providers retain their own adapter-defined reasoning behavior.
 
@@ -292,22 +292,22 @@ This keeps role files focused on provider/model routing and avoids introducing a
 The bundled patch installs the following defaults:
 
 ```yaml
-- id: smart-subagent
+- id: evo-subagent
   config:
     bindingsDir: /absolute/path/to/agents
     provider: spawn
-    toolName: smart_subagent
+    toolName: evo_subagent
     maxDepth: 3
 ```
 
 To use fork-mode routing instead, override `provider` to `fork`:
 
 ```yaml
-- id: smart-subagent
+- id: evo-subagent
   config:
     bindingsDir: /absolute/path/to/agents
     provider: fork
-    toolName: smart_subagent
+    toolName: evo_subagent
     maxDepth: 3
 ```
 
@@ -320,7 +320,7 @@ DSH patch overrides replace the complete `config` object, so retain every field 
 - Provider/model matching is exact and case-sensitive.
 - Invalid bindings never fall back to another route.
 - Binding files contain no credentials.
-- Disabling this plugin removes only `smart_subagent`; the official `subagent` tool is unchanged.
+- Disabling this plugin removes only `evo_subagent`; the official `subagent` tool is unchanged.
 
 ## Development
 

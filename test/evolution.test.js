@@ -39,17 +39,17 @@ import {
 const here = dirname(fileURLToPath(import.meta.url))
 const templatesDir = join(here, '..', 'templates')
 
-test('defaultEvolutionDir is project-scoped under <cwd>/.smart_subagent/evolution', () => {
+test('defaultEvolutionDir is project-scoped under <cwd>/.evo_subagent/evolution', () => {
   const d = defaultEvolutionDir()
   // Relative to the launch working directory, so each project is isolated.
   assert.equal(d.startsWith(process.cwd()), true)
-  assert.match(d, /\.smart_subagent[/\\]evolution$/)
+  assert.match(d, /\.evo_subagent[/\\]evolution$/)
 })
 
 test('new evolution storage reads legacy files and migrates them on first save', async () => {
   const root = await makeEvoDir()
-  const current = join(root, '.smart_subagent', 'evolution')
-  const legacy = join(root, '.dsh', 'smart-subagent', 'evolution')
+  const current = join(root, '.evo_subagent', 'evolution')
+  const legacy = join(root, '.smart_subagent', 'evolution')
   await writeEvolutionFiles(legacy, 'reviewer', {
     prefercmd: '- legacy command\n',
     memory: '- legacy lesson\n',
@@ -73,6 +73,14 @@ test('main agent evolution block is idempotent and removable', () => {
   assert.equal(removeMainAgentBlock(injected), original)
 })
 
+test('main agent block migrates the former smart-subagent marker', () => {
+  const legacy = '# Project\n\n<!-- smart-subagent:main-evolution:start -->\nold block\n<!-- smart-subagent:main-evolution:end -->\n'
+  const migrated = addMainAgentBlock(legacy)
+  assert.doesNotMatch(migrated, /smart-subagent:main-evolution/)
+  assert.match(migrated, /evo-subagent:main-evolution:start/)
+  assert.match(migrated, /^# Project/m)
+})
+
 test('one workspace main agent binding updates AGENTS.md and config reversibly', async () => {
   const root = await makeEvoDir()
   const filename = join(root, 'AGENTS.md')
@@ -83,12 +91,12 @@ test('one workspace main agent binding updates AGENTS.md and config reversibly',
 
   const bound = await setMainAgentConfig(root, 'AGENTS.md')
   assert.equal(bound.filename, 'AGENTS.md')
-  assert.match(await readFile(filename, 'utf8'), /\.smart_subagent\/evolution\/main\/memory\.md/)
-  assert.deepEqual(JSON.parse(await readFile(join(root, '.smart_subagent', 'config.json'), 'utf8')), {
+  assert.match(await readFile(filename, 'utf8'), /\.evo_subagent\/evolution\/main\/memory\.md/)
+  assert.deepEqual(JSON.parse(await readFile(join(root, '.evo_subagent', 'config.json'), 'utf8')), {
     mainAgentFile: 'AGENTS.md',
   })
-  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '')
-  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '')
+  assert.equal(await readFile(join(root, '.evo_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '')
+  assert.equal(await readFile(join(root, '.evo_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '')
 
   const unbound = await setMainAgentConfig(root, '')
   assert.equal(unbound.filename, '')
@@ -146,7 +154,7 @@ test('buildInjection produces a bounded block with both sections', () => {
   const out = buildInjection(['cmd1', 'cmd2'], ['lesson1'])
   assert.match(out, /Known working commands/)
   assert.match(out, /Lessons learned/)
-  assert.match(out, /smart-subagent evolution/)
+  assert.match(out, /evo-subagent evolution/)
   assert.match(out, /- cmd1/)
   assert.match(out, /- cmd2/)
   assert.match(out, /- lesson1/)
@@ -358,6 +366,14 @@ test('evolution-report block is idempotent and removable', () => {
   assert.equal(removeEvolutionReportBlock(original), original)
 })
 
+test('evolution-report block migrates the former smart-subagent marker', () => {
+  const legacy = '---\nprovider: p\nmodel: m\n---\n\n<!-- smart-subagent:evolution-report:start -->\nold block\n<!-- smart-subagent:evolution-report:end -->\n'
+  const migrated = addEvolutionReportBlock(legacy)
+  assert.doesNotMatch(migrated, /smart-subagent:evolution-report/)
+  assert.match(migrated, /evo-subagent:evolution-report:start/)
+  assert.match(migrated, /provider: p/)
+})
+
 test('ensureAgentReportBlocks injects into every binding file once', async () => {
   const agentsDir = await mkdtemp(join(tmpdir(), 'smart-sub-repbind-'))
   await writeFile(join(agentsDir, 'writer.md'), '---\nprovider: p\nmodel: m\n---\n\n# Writer\n\nrole\n', 'utf8')
@@ -369,7 +385,7 @@ test('ensureAgentReportBlocks injects into every binding file once', async () =>
   assert.deepEqual(injected.sort(), ['planner', 'writer'])
 
   const writer = await readFile(join(agentsDir, 'writer.md'), 'utf8')
-  assert.match(writer, /smart-subagent:evolution-report:start/)
+  assert.match(writer, /evo-subagent:evolution-report:start/)
   assert.match(writer, /# Writer/, 'role body preserved')
 
   // Second pass: no files reported, nothing changes.
@@ -400,10 +416,10 @@ test('ensureWorkspaceProvisioned auto-binds AGENTS.md and injects report blocks'
   // Main agent is bound: config + reversible block in AGENTS.md.
   const cfg = await readMainAgentConfig(root)
   assert.equal(cfg.filename, 'AGENTS.md')
-  assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /smart-subagent:main-evolution:start/)
+  assert.match(await readFile(join(root, 'AGENTS.md'), 'utf8'), /evo-subagent:main-evolution:start/)
   // Evolution files for main are created.
-  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '')
-  assert.equal(await readFile(join(root, '.smart_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '')
+  assert.equal(await readFile(join(root, '.evo_subagent', 'evolution', 'main', 'prefercmd.md'), 'utf8'), '')
+  assert.equal(await readFile(join(root, '.evo_subagent', 'evolution', 'main', 'memory.md'), 'utf8'), '')
 
   // Second run: nothing re-injected, main stays bound.
   const again = await ensureWorkspaceProvisioned(root, agentsDir)

@@ -11,7 +11,7 @@ import { loadTemplate } from '../binding.js'
 const templatesDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates')
 
 async function harness(files = {}, config = {}) {
-  const bindingsDir = await mkdtemp(join(tmpdir(), 'smart-subagent-template-'))
+  const bindingsDir = await mkdtemp(join(tmpdir(), 'evo-subagent-template-'))
   for (const [key, text] of Object.entries(files)) {
     await writeFile(join(bindingsDir, `${key}.md`), text, 'utf8')
   }
@@ -43,7 +43,7 @@ async function harness(files = {}, config = {}) {
       },
     },
   }
-  createApply(value => value)(ctx, { bindingsDir, templatesDir, provider: 'spawn', toolName: 'smart_subagent', maxDepth: 3, ...config })
+  createApply(value => value)(ctx, { bindingsDir, templatesDir, provider: 'spawn', toolName: 'evo_subagent', maxDepth: 3, ...config })
   return { definition, starts }
 }
 
@@ -124,7 +124,7 @@ test('a template with an unregistered model fails before any child is created', 
       async startContinuable() { throw new Error('should not be called') },
     },
   }
-  createApply(value => value)(h2, { bindingsDir: h.bindingsDir, templatesDir, provider: 'spawn', toolName: 'smart_subagent', maxDepth: 3 })
+  createApply(value => value)(h2, { bindingsDir: h.bindingsDir, templatesDir, provider: 'spawn', toolName: 'evo_subagent', maxDepth: 3 })
   await assert.rejects(def2.execute({
     agent_key: 'wps-worker', description: 'doc', prompt: '', run_in_background: false,
   }, exec), /model "deepseek-v4-flash" is not registered/)

@@ -1,10 +1,10 @@
 - insert:
-    - id: smart-subagent
-      name: smart-subagent
+    - id: evo-subagent
+      name: evo-subagent
       config:
-        bindingsDir: !!js process.env.SMART_SUBAGENT_BINDINGS_DIR || process.env.DSH_AGENT_BINDINGS_DIR || 'agents'
-        evolutionDir: !!js process.env.SMART_SUBAGENT_EVOLUTION_DIR || ''
-        projectsBaseDir: !!js process.env.SMART_SUBAGENT_PROJECTS_DIR || ''
+        bindingsDir: !!js process.env.EVO_SUBAGENT_BINDINGS_DIR || process.env.DSH_AGENT_BINDINGS_DIR || 'agents'
+        evolutionDir: !!js process.env.EVO_SUBAGENT_EVOLUTION_DIR || ''
+        projectsBaseDir: !!js process.env.EVO_SUBAGENT_PROJECTS_DIR || ''
         provider: spawn
-        toolName: smart_subagent
+        toolName: evo_subagent
         maxDepth: 3

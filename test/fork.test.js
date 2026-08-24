@@ -6,7 +6,7 @@ import test from 'node:test'
 import { createApply } from '../plugin.js'
 
 async function harness(files = {}, config = {}) {
-  const bindingsDir = await mkdtemp(join(tmpdir(), 'smart-subagent-fork-'))
+  const bindingsDir = await mkdtemp(join(tmpdir(), 'evo-subagent-fork-'))
   for (const [key, text] of Object.entries(files)) {
     await writeFile(join(bindingsDir, `${key}.md`), text, 'utf8')
   }
@@ -36,7 +36,7 @@ async function harness(files = {}, config = {}) {
       },
     },
   }
-  createApply(value => value)(ctx, { bindingsDir, provider: 'fork', toolName: 'smart_subagent', maxDepth: 3, ...config })
+  createApply(value => value)(ctx, { bindingsDir, provider: 'fork', toolName: 'evo_subagent', maxDepth: 3, ...config })
   return { definition, forkStarts, forkContinuing }
 }
 

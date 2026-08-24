@@ -8,13 +8,13 @@ const MODEL_LINE = /^model:[ \t]*([^\s]+)[ \t]*$/
 
 export function assertAgentKey(agentKey) {
   if (typeof agentKey !== 'string' || !AGENT_KEY.test(agentKey)) {
-    throw new Error('smart-subagent: agent_key must match [A-Za-z0-9][A-Za-z0-9_-]*')
+    throw new Error('evo-subagent: agent_key must match [A-Za-z0-9][A-Za-z0-9_-]*')
   }
   return agentKey
 }
 
 export function parseBindingHeader(text, filename = '<binding>') {
-  if (typeof text !== 'string') throw new TypeError('smart-subagent: binding content must be text')
+  if (typeof text !== 'string') throw new TypeError('evo-subagent: binding content must be text')
   const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/, 5)
   if (lines[0] !== FRONT_MATTER_DELIMITER) {
     throw new Error(`${filename}: line 1 must be exactly "---"`)
@@ -41,7 +41,7 @@ export async function loadBinding(bindingsDir, agentKey) {
     text = await readFile(filename, 'utf8')
   } catch (error) {
     if (error?.code === 'ENOENT') return undefined
-    throw new Error(`smart-subagent: failed to read ${filename}`, { cause: error })
+    throw new Error(`evo-subagent: failed to read ${filename}`, { cause: error })
   }
   return { ...parseBindingHeader(text, filename), filename }
 }
@@ -60,10 +60,10 @@ export async function loadBinding(bindingsDir, agentKey) {
  */
 export async function setBindingModel(filename, model, provider) {
   if (typeof model !== 'string' || model.length === 0) {
-    throw new TypeError('smart-subagent: model must be a non-empty string')
+    throw new TypeError('evo-subagent: model must be a non-empty string')
   }
   if (provider !== undefined && (typeof provider !== 'string' || provider.length === 0)) {
-    throw new TypeError('smart-subagent: provider must be a non-empty string when given')
+    throw new TypeError('evo-subagent: provider must be a non-empty string when given')
   }
   const text = await readFile(filename, 'utf8')
   const body = text.replace(/^\uFEFF/, '')
@@ -102,7 +102,7 @@ export async function loadTemplate(templatesDir, agentKey) {
     text = await readFile(filename, 'utf8')
   } catch (error) {
     if (error?.code === 'ENOENT') return undefined
-    throw new Error(`smart-subagent: failed to read built-in template ${filename}`, { cause: error })
+    throw new Error(`evo-subagent: failed to read built-in template ${filename}`, { cause: error })
   }
   const header = parseBindingHeader(text, filename)
   // Body = everything after the 4-line front matter (--- / provider / model / ---).
@@ -114,13 +114,13 @@ export async function assertRegisteredModel(llm, binding) {
   const providers = llm.listProviders()
   if (!providers.some(entry => entry.id === binding.provider)) {
     throw new Error(
-      `smart-subagent: provider ${JSON.stringify(binding.provider)} from ${binding.filename} is not registered`,
+      `evo-subagent: provider ${JSON.stringify(binding.provider)} from ${binding.filename} is not registered`,
     )
   }
   const models = await llm.listModels(binding.provider)
   if (!models.some(entry => entry.id === binding.model)) {
     throw new Error(
-      `smart-subagent: model ${JSON.stringify(binding.model)} is not registered under provider `
+      `evo-subagent: model ${JSON.stringify(binding.model)} is not registered under provider `
       + `${JSON.stringify(binding.provider)} in ${binding.filename}`,
     )
   }

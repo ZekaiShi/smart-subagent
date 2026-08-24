@@ -1,6 +1,6 @@
 # evo-subagent
 
-![evo-subagent — Route. Remember. Evolve.](assets/Smart-subagent-image-abstract.png)
+![evo-subagent — Route. Remember. Evolve.](assets/Evo-subagent-preview.png)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 

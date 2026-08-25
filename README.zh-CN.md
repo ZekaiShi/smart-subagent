@@ -4,6 +4,8 @@
 
 [English](README.md) | 简体中文
 
+[![DSH Market](https://img.shields.io/badge/DSH%20Market-evo--subagent-6f42c1)](https://dshmarket.com/)
+
 `evo-subagent` 是一个用于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的轻量插件。它把如今散落在不同插件里的三件事收拢到一起——**按角色的 subagent 路由**、**按 agent 的进化维护**（已验证命令 + 经验教训）、以及**一套知识的白名单/黑名单**——让重复任务从已经验证过的起点出发，而不是重新摸索：更少的重试、更少的重复 debug、更省的 token。
 
 ### 路由
@@ -42,6 +44,15 @@ dsh plugin add evo-subagent
 ```sh
 dsh plugin add github:ZekaiShi/evo-subagent
 ```
+
+通过 [DSH Market](https://dshmarket.com/) 安装：
+
+```sh
+dsh plugin --profile web add dshmarket
+```
+
+重启 `dsh web`，打开 **设置 → 插件市场**，搜索 `evo-subagent`。DSH Market
+读取 `awesome-dsh-plugin` 精选注册表，因此新增或改名条目会在该注册表完成下一次同步后出现。
 
 本地开发安装：
 
@@ -196,10 +207,21 @@ DSH patch 覆盖会替换完整 `config`，自行覆盖时请保留仍需使用�
 
 要求 Node.js 22 或更高版本。
 
+这个仓库是 `evo-subagent` 插件仓库，并不是完整的 DeepSeek Harness
+源码仓库。它有意不提供 `build` script，也不包含本地 `dsh` 可执行文件。
+如需从任意目录启动已发布的 DSH Web UI，请使用：
+
 ```sh
-pnpm install
-pnpm test
-pnpm run check
+npx @deepseek-ai/dsh web
+```
+
+项目通过 Corepack 固定 pnpm 版本。在 Windows PowerShell 中，如果提示无法识别
+`pnpm`，直接使用下面带 `corepack` 前缀的命令即可，不需要全局安装 pnpm。
+
+```sh
+corepack pnpm install
+corepack pnpm test
+corepack pnpm run check
 npm pack --dry-run
 ```
 

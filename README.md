@@ -7,6 +7,7 @@
 [![npm version](https://img.shields.io/npm/v/evo-subagent.svg)](https://www.npmjs.com/package/evo-subagent)
 [![license](https://img.shields.io/npm/l/evo-subagent.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
+[![DSH Market](https://img.shields.io/badge/DSH%20Market-evo--subagent-6f42c1)](https://dshmarket.com/)
 
 `evo-subagent` is a lightweight plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It pulls together three capabilities that today live scattered across separate plugins — **role-based subagent routing**, **per-agent evolution** (verified commands + lessons), and **a knowledge allow/deny list** — so repeated tasks start from what already works instead of rediscovering it: fewer retries, fewer re-debugged bugs, fewer tokens.
 
@@ -46,6 +47,16 @@ Install directly from GitHub:
 ```sh
 dsh plugin add github:ZekaiShi/evo-subagent
 ```
+
+Install through [DSH Market](https://dshmarket.com/):
+
+```sh
+dsh plugin --profile web add dshmarket
+```
+
+Restart `dsh web`, open **Settings → Plugin Market**, and search for
+`evo-subagent`. DSH Market reads the curated `awesome-dsh-plugin` registry, so
+new or renamed entries appear after that registry completes its next sync.
 
 For local development:
 
@@ -326,10 +337,23 @@ DSH patch overrides replace the complete `config` object, so retain every field 
 
 Requires Node.js 22 or newer.
 
+This repository is the `evo-subagent` plugin checkout, not the full DeepSeek
+Harness source checkout. It intentionally has no `build` script and does not
+provide a local `dsh` executable. To launch the published DSH Web UI from any
+directory, use:
+
 ```sh
-pnpm install
-pnpm test
-pnpm run check
+npx @deepseek-ai/dsh web
+```
+
+The project pins pnpm through Corepack. On Windows, if PowerShell says that
+`pnpm` is not recognized, use the Corepack-prefixed commands below; a global
+pnpm installation is not required.
+
+```sh
+corepack pnpm install
+corepack pnpm test
+corepack pnpm run check
 npm pack --dry-run
 ```
 

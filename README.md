@@ -28,6 +28,17 @@ It maps stable agent roles to registered provider/model pairs, remembers verifie
 dsh plugin add evo-subagent
 ```
 
+## Quick start
+
+![Open and manage evo-subagent in DSH](assets/evo-subagent-tutorial.gif)
+
+1. Open **Settings → Plugins** and expand **evo-subagent**.
+2. Select a workspace and add a built-in role, or place a custom binding in its `agents/` directory.
+3. Choose a registered provider/model pair for each custom binding.
+4. Expand an agent to review its `prefercmd.md` and `memory.md` evolution files.
+
+[Download the MP4 tutorial](assets/evo-subagent-tutorial.mp4)
+
 ## Agent bindings
 
 Create an `agents/` directory in the project and add one Markdown file per role. The filename stem becomes the `agent_key`.

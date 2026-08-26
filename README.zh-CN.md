@@ -28,6 +28,17 @@
 dsh plugin add evo-subagent
 ```
 
+## 快速开始
+
+![在 DSH 中打开并管理 evo-subagent](assets/evo-subagent-tutorial.gif)
+
+1. 打开 **设置 → 插件**，展开 **evo-subagent**。
+2. 选择工作区并添加内置角色，或把自定义绑定放入该工作区的 `agents/` 目录。
+3. 为每个自定义绑定选择已经注册的 provider/model 组合。
+4. 展开 Agent，即可查看其 `prefercmd.md` 与 `memory.md` 进化文件。
+
+[下载 MP4 教程](assets/evo-subagent-tutorial.mp4)
+
 ## Agent 绑定
 
 在项目中创建 `agents/` 目录，每个角色对应一个 Markdown 文件。文件名即 `agent_key`。

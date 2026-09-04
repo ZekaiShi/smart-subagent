@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="title desc">
+  <title id="title">evo-subagent cumulative npm downloads</title>
+  <desc id="desc">Cumulative npm downloads for evo-subagent since its first release, generated automatically from the npm downloads API.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0b1020"/><stop offset="1" stop-color="#172554"/></linearGradient>
+    <linearGradient id="line" x1="0" x2="1"><stop stop-color="#8b5cf6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
+    <linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#38bdf8" stop-opacity=".36"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="960" height="360" rx="18" fill="url(#background)"/>
+  <text x="62" y="36" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="22" font-weight="700">cumulative npm downloads</text>
+  <text x="62" y="56" fill="#a5b4fc" font-family="system-ui, sans-serif" font-size="13">evo-subagent · since 2026-08-24 · 211 total</text>
+  <g stroke="#64748b" stroke-opacity=".35" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="12"><line x1="62" y1="292" x2="914" y2="292" /><text x="50" y="297" text-anchor="end">0</text><line x1="62" y1="180" x2="914" y2="180" /><text x="50" y="185" text-anchor="end">106</text><line x1="62" y1="68" x2="914" y2="68" /><text x="50" y="73" text-anchor="end">211</text></g>
+  <polygon points="62,292 62.00,158.24 139.45,149.74 216.91,140.19 294.36,132.76 371.82,125.33 449.27,110.46 526.73,101.97 604.18,89.23 681.64,76.49 759.09,68.00 836.55,68.00 914.00,68.00 914,292" fill="url(#area)"/>
+  <polyline points="62.00,158.24 139.45,149.74 216.91,140.19 294.36,132.76 371.82,125.33 449.27,110.46 526.73,101.97 604.18,89.23 681.64,76.49 759.09,68.00 836.55,68.00 914.00,68.00" fill="none" stroke="url(#line)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="12"><text x="62" y="330" text-anchor="middle">08-24</text><text x="449.27272727272725" y="330" text-anchor="middle">08-29</text><text x="914" y="330" text-anchor="middle">09-04</text></g>
+  <circle cx="914" cy="68" r="6" fill="#22d3ee" stroke="#e0f2fe" stroke-width="3"/>
+</svg>

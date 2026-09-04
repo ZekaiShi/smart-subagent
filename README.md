@@ -8,6 +8,12 @@
 [![license](https://img.shields.io/npm/l/evo-subagent.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
 
+## Downloads
+
+![Cumulative npm downloads](assets/npm-downloads.svg)
+
+Cumulative npm download data since the first release, refreshed automatically every day. DSH Market ranks plugins using npm downloads, so this is the closest public adoption signal; it cannot distinguish marketplace installs from direct npm installs.
+
 `evo-subagent` is a DeepSeek Harness plugin for predictable subagent routing and project-scoped evolution.
 
 It maps stable agent roles to registered provider/model pairs, remembers verified commands and lessons for each role, and keeps every project's agent knowledge isolated.

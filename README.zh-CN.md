@@ -8,6 +8,12 @@
 [![license](https://img.shields.io/npm/l/evo-subagent.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
 
+## 下载趋势
+
+![npm 累积下载量](assets/npm-downloads.svg)
+
+图表展示自首次发布以来的 npm 累积下载量，并每天自动更新。DSH Market 使用 npm 下载量进行排序，因此它是最接近公开采用量的指标；但不能区分来自插件市场与直接 npm 安装的下载。
+
 `evo-subagent` 是一个面向 DeepSeek Harness 的 Subagent 路由与项目级进化插件。
 
 它把稳定的 Agent 角色映射到已经注册的 provider/model，为每个角色记录已验证命令与经验，并隔离不同项目的 Agent 知识。
